@@ -331,6 +331,99 @@ function regenerarResumenSocios(data) {
     movimientos: [...sinResumenSocios(data.movimientos), ...construirResumenSocios(data.cobrosSocios || [], data.cuentas || [])],
   };
 }
+
+// ------------------------------------------------------------------
+// Cantera (jugadores): igual que socios, pero el resumen mensual se
+// separa además por EQUIPO, para que en Movimientos quede una línea por
+// mes, equipo y cuenta.
+// ------------------------------------------------------------------
+function nombreEquipoDe(jugadores, jugadorId) {
+  return (jugadores || []).find((j) => j.id === jugadorId)?.equipo || "Cantera";
+}
+function construirResumenCantera(cobros, cuentas, jugadores) {
+  const map = {};
+  for (const c of cobros || []) {
+    const cid = c.cuentaId;
+    const mes = c.mes || (c.fecha || "").slice(0, 7);
+    const equipo = nombreEquipoDe(jugadores, c.jugadorId);
+    if (!mes || !cid) continue;
+    const k = `${mes}|${cid}|${equipo}`;
+    if (!map[k]) map[k] = { mes, cuentaId: cid, equipo, total: 0, formas: new Set(), fecha: c.fecha || `${mes}-01` };
+    map[k].total += num(c.importe);
+    map[k].formas.add(c.forma || "Otro");
+    if ((c.fecha || "") > map[k].fecha) map[k].fecha = c.fecha;
+  }
+  return Object.values(map).map((g) => ({
+    id: `auto-can-${g.mes}-${g.cuentaId}-${g.equipo}`.replace(/\s+/g, "_"),
+    fecha: g.fecha,
+    tipo: "ingreso",
+    categoria: "Cuotas categorías inferiores",
+    empresa: "",
+    concepto: `Cuotas cantera ${g.equipo} — ${mesLabel(g.mes)}${cuentaEsEfectivo(cuentas, g.cuentaId) ? " (efectivo)" : " (banco)"}`,
+    importe: r2(g.total),
+    cuentaId: g.cuentaId,
+    forma: g.formas.size === 1 ? [...g.formas][0] : "Varias",
+    auto: "cobroCantera",
+    conciliado: false,
+  }));
+}
+const sinResumenCantera = (movs) => (movs || []).filter((m) => m.auto !== "cobroCantera");
+function regenerarResumenCantera(data) {
+  return {
+    ...data,
+    movimientos: [...sinResumenCantera(data.movimientos), ...construirResumenCantera(data.cobrosCantera || [], data.cuentas || [], data.jugadores || [])],
+  };
+}
+
+// ------------------------------------------------------------------
+// Publicidad (cartelería): en vez de un movimiento por contrato cobrado,
+// un resumen mensual separado por CATEGORÍA (tipo de cartelería) y cuenta.
+// La ficha de cada contrato con su IVA sigue guardada en la pestaña
+// Publicidad; aquí solo se agrupa el ingreso para la contabilidad.
+// ------------------------------------------------------------------
+function construirResumenCartelera(cartelera, cuentas) {
+  const map = {};
+  for (const c of cartelera || []) {
+    if (c.estado !== "cobrado") continue; // solo lo cobrado suma al saldo
+    const cid = c.cuentaId;
+    const mes = (c.fecha || "").slice(0, 7);
+    const tipo = c.tipo || "estatica";
+    if (!mes || !cid) continue;
+    const k = `${mes}|${cid}|${tipo}`;
+    if (!map[k]) map[k] = { mes, cuentaId: cid, tipo, total: 0, formas: new Set(), fecha: c.fecha };
+    map[k].total += num(c.total);
+    map[k].formas.add(c.forma || "Otro");
+    if ((c.fecha || "") > map[k].fecha) map[k].fecha = c.fecha;
+  }
+  return Object.values(map).map((g) => {
+    const info = (typeof TIPOS_CART !== "undefined" && TIPOS_CART[g.tipo]) || { cat: "Publicidad y patrocinios", label: g.tipo };
+    return {
+      id: `auto-pub-${g.mes}-${g.cuentaId}-${g.tipo}`.replace(/\s+/g, "_"),
+      fecha: g.fecha,
+      tipo: "ingreso",
+      categoria: info.cat,
+      empresa: "",
+      concepto: `Publicidad ${info.label} — ${mesLabel(g.mes)}${cuentaEsEfectivo(cuentas, g.cuentaId) ? " (efectivo)" : " (banco)"}`,
+      importe: r2(g.total),
+      cuentaId: g.cuentaId,
+      forma: g.formas.size === 1 ? [...g.formas][0] : "Varias",
+      auto: "cartelera",
+      conciliado: false,
+    };
+  });
+}
+const sinResumenCartelera = (movs) => (movs || []).filter((m) => m.auto !== "cartelera");
+function regenerarResumenCartelera(data) {
+  return {
+    ...data,
+    movimientos: [...sinResumenCartelera(data.movimientos), ...construirResumenCartelera(data.cartelera || [], data.cuentas || [])],
+  };
+}
+
+// Recalcula los tres resúmenes (socios, cantera y publicidad) de una vez.
+function regenerarResumenes(data) {
+  return regenerarResumenCartelera(regenerarResumenCantera(regenerarResumenSocios(data)));
+}
 // Renumeración de temporada: los socios que pagaron su cuota conservan y se
 // renumeran seguidos (1,2,3…) dentro de su serie; los que no pagaron pierden
 // el número y pasan a "baja" (no se borran, se guardan por si vuelven).
@@ -365,7 +458,7 @@ const cuentasDefecto = () => [
 ];
 
 const defaultData = () => ({
-  version: 7,
+  version: 8,
   config: { nombre: "Mi Club de Fútbol", clave: "" },
   cuentas: cuentasDefecto(),
   categorias: { ingreso: CATS_INGRESO, gasto: CATS_GASTO },
@@ -379,12 +472,13 @@ const defaultData = () => ({
   presupuestos: {},
   movimientos: [],
   cobrosSocios: [],
+  cobrosCantera: [],
 });
 
 // Migración desde versiones anteriores
 function migrar(old) {
   if (!old) return defaultData();
-  if (old.version === 7) return old;
+  if (old.version === 8) return old;
 
   let d = old;
   // v1 → v2
@@ -457,8 +551,39 @@ function migrar(old) {
     }
     out.movimientos = resto;
   }
-  out.version = 7;
-  return regenerarResumenSocios(out);
+
+  // → v8: cantera con su libro de cobros + resumen mensual por equipo, y
+  // publicidad como resumen mensual por categoría (sustituye a los apuntes
+  // uno por contrato). Los saldos NO cambian: se conserva la suma por cuenta.
+  if (Array.isArray(d.cobrosCantera)) {
+    out.cobrosCantera = d.cobrosCantera;
+  } else {
+    out.cobrosCantera = [];
+    const resto2 = [];
+    for (const m of out.movimientos || []) {
+      if (m.refTipo === "jugador") {
+        out.cobrosCantera.push({
+          id: uid("cc"),
+          jugadorId: m.refId,
+          temporada: temporadaDe(m.fecha),
+          mes: mesKey(m.fecha),
+          fecha: m.fecha,
+          importe: num(m.importe),
+          forma: m.forma || "Efectivo",
+          cuentaId: m.cuentaId,
+        });
+      } else {
+        resto2.push(m);
+      }
+    }
+    out.movimientos = resto2;
+  }
+  // Quitar los movimientos antiguos de publicidad (uno por contrato): se
+  // sustituyen por el resumen mensual generado desde la cartelera.
+  out.movimientos = (out.movimientos || []).filter((m) => m.refTipo !== "cart");
+
+  out.version = 8;
+  return regenerarResumenes(out);
 }
 
 const emptyMov = () => ({ fecha: hoyISO(), tipo: "ingreso", categoria: "", empresa: "", concepto: "", importe: "", cuentaId: "", destinoId: "", forma: "Transferencia" });
@@ -899,6 +1024,7 @@ function TesoreriaClub() {
   const movs = data ? data.movimientos : [];
   const cuentas = data ? data.cuentas : [];
   const cobrosSocios = data ? (data.cobrosSocios || []) : [];
+  const cobrosCantera = data ? (data.cobrosCantera || []) : [];
   const cuentaNombre = useCallback((id) => cuentas.find((c) => c.id === id)?.nombre || "—", [cuentas]);
 
   const saldos = useMemo(() => {
@@ -989,24 +1115,32 @@ function TesoreriaClub() {
       .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
   }, [movs, filtro]);
 
-  // Lo pagado por un socio se lee del libro de cobros; lo de cantera, de los movimientos.
+  // Lo pagado por socios y cantera se lee de sus libros de cobros.
   const pagadoPor = useCallback((refTipo, refId) => {
     if (refTipo === "socio")
       return cobrosSocios
         .filter((c) => c.socioId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
         .reduce((s, c) => s + num(c.importe), 0);
+    if (refTipo === "jugador")
+      return cobrosCantera
+        .filter((c) => c.jugadorId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
+        .reduce((s, c) => s + num(c.importe), 0);
     return movs.filter((m) => m.refTipo === refTipo && m.refId === refId && temporadaDe(m.fecha) === tempActiva)
         .reduce((s, m) => s + num(m.importe), 0);
-  }, [movs, cobrosSocios, tempActiva]);
+  }, [movs, cobrosSocios, cobrosCantera, tempActiva]);
 
   const pagosDe = useCallback((refTipo, refId) => {
     if (refTipo === "socio")
       return cobrosSocios
         .filter((c) => c.socioId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
         .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+    if (refTipo === "jugador")
+      return cobrosCantera
+        .filter((c) => c.jugadorId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
+        .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
     return movs.filter((m) => m.refTipo === refTipo && m.refId === refId && temporadaDe(m.fecha) === tempActiva)
         .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-  }, [movs, cobrosSocios, tempActiva]);
+  }, [movs, cobrosSocios, cobrosCantera, tempActiva]);
 
   // ---------- pendiente de cobro (para el Resumen y el informe) ----------
   // Junta en un solo sitio todo lo que le deben al club esta temporada:
@@ -1126,15 +1260,16 @@ function TesoreriaClub() {
   };
 
   const borrarSeleccionados = () => {
-    // No se borran las líneas-resumen de socios (se gestionan desde Socios → Cobros del mes)
-    const aBorrar = selec.filter((id) => movs.find((m) => m.id === id)?.auto !== "cobroSocios");
+    // No se borran las líneas-resumen automáticas (socios, cantera y publicidad):
+    // se gestionan desde sus pestañas. Aquí se saltan.
+    const aBorrar = selec.filter((id) => !movs.find((m) => m.id === id)?.auto);
     const protegidos = selec.length - aBorrar.length;
     persist({ ...data, movimientos: movs.filter((m) => !aBorrar.includes(m.id)) });
     setSelec([]);
     setConfirmaBulk(false);
     setAviso(
       `${aBorrar.length} movimiento${aBorrar.length === 1 ? "" : "s"} borrado${aBorrar.length === 1 ? "" : "s"}.` +
-      (protegidos > 0 ? ` (${protegidos} resumen de socios no se ha tocado: cámbialo en Socios → Cobros del mes.)` : "")
+      (protegidos > 0 ? ` (${protegidos} línea${protegidos === 1 ? "" : "s"}-resumen no se ${protegidos === 1 ? "ha" : "han"} tocado: se gestionan desde Socios, Cantera o Publicidad.)` : "")
     );
   };
 
@@ -1190,6 +1325,14 @@ function TesoreriaClub() {
       setAviso("Este movimiento resume los cobros de socios del mes. Se gestiona desde la pestaña Socios → Cobros del mes.");
       return;
     }
+    if (m.auto === "cobroCantera") {
+      setAviso("Este movimiento resume los cobros de cantera del mes. Se gestiona desde la pestaña Cantera (con el botón «+ Pago» de cada jugador).");
+      return;
+    }
+    if (m.auto === "cartelera") {
+      setAviso("Este movimiento resume la publicidad cobrada del mes. Se gestiona desde la pestaña Publicidad.");
+      return;
+    }
     setEditId(m.id);
     setEditForm({ fecha: m.fecha, tipo: m.tipo, categoria: m.tipo === "traspaso" ? "" : m.categoria,
       empresa: m.empresa || "", concepto: m.concepto, importe: String(m.importe), cuentaId: m.cuentaId, destinoId: m.destinoId || "", forma: m.forma || "Transferencia" });
@@ -1211,6 +1354,14 @@ function TesoreriaClub() {
     const m = movs.find((x) => x.id === id);
     if (m?.auto === "cobroSocios") {
       setAviso("Este movimiento resume los cobros de socios del mes. Para cambiarlo, quita el cobro en la pestaña Socios → Cobros del mes.");
+      return;
+    }
+    if (m?.auto === "cobroCantera") {
+      setAviso("Este movimiento resume los cobros de cantera del mes. Para cambiarlo, quita el pago en la pestaña Cantera.");
+      return;
+    }
+    if (m?.auto === "cartelera") {
+      setAviso("Este movimiento resume la publicidad cobrada del mes. Para cambiarlo, edítalo en la pestaña Publicidad.");
       return;
     }
     persist({ ...data, movimientos: movs.filter((m) => m.id !== id) });
@@ -1243,9 +1394,32 @@ function TesoreriaClub() {
     setAviso("Cobro eliminado. El resumen mensual se ha vuelto a calcular.");
   };
 
-  // ---------- pagos de cuota de cantera (jugadores) ----------
+  // ---------- cobros de cantera (libro aparte + resumen mensual por equipo) ----------
+  const guardarCobrosCant = (nuevos) => persist(regenerarResumenCantera({ ...data, cobrosCantera: nuevos }));
+
+  const registrarCobroCantera = ({ jugadorId, fecha, importe, cuentaId, forma }) => {
+    const imp = num(importe);
+    if (imp <= 0) { setAviso("Escribe un importe mayor que cero."); return false; }
+    if (!cuentaId) { setAviso("Elige la cuenta donde entra el dinero."); return false; }
+    if (!fecha) { setAviso("Falta la fecha del pago."); return false; }
+    const cobro = {
+      id: uid("cc"), jugadorId, temporada: temporadaDe(fecha),
+      mes: mesKey(fecha), fecha, importe: imp, cuentaId, forma: forma || "Efectivo",
+    };
+    guardarCobrosCant([...cobrosCantera, cobro]);
+    setAviso("Pago de cantera registrado. Se suma al resumen mensual por equipo.");
+    return true;
+  };
+
+  const borrarCobroCantera = (id) => {
+    guardarCobrosCant(cobrosCantera.filter((c) => c.id !== id));
+    setAviso("Pago eliminado. El resumen mensual se ha vuelto a calcular.");
+  };
+
+  // ---------- pagos de cuota (socios → su libro; cantera → su libro) ----------
   const registrarPago = ({ refTipo, refId, nombre, extra, fecha, importe, cuentaId, forma }) => {
     if (refTipo === "socio") return registrarCobroSocio({ socioId: refId, fecha, importe, cuentaId, forma });
+    if (refTipo === "jugador") return registrarCobroCantera({ jugadorId: refId, fecha, importe, cuentaId, forma });
     const imp = num(importe);
     if (imp <= 0) return setAviso("Escribe un importe mayor que cero.");
     if (!cuentaId) return setAviso("Elige la cuenta donde entra el dinero.");
@@ -1359,35 +1533,22 @@ function TesoreriaClub() {
       estado: c.estado, cuentaId: c.cuentaId, forma: c.forma,
     };
 
-    let lista = [...movs];
-    const ix = lista.findIndex((m) => m.refTipo === "cart" && m.refId === reg.id);
-    if (reg.estado === "cobrado") {
-      const mov = {
-        id: ix >= 0 ? lista[ix].id : uid("mc"),
-        fecha: reg.fecha, tipo: "ingreso", categoria: TIPOS_CART[reg.tipo].cat,
-        concepto: `Publicidad ${TIPOS_CART[reg.tipo].label} — ${reg.cliente}${reg.concepto ? ` (${reg.concepto})` : ""}${ivaDef.pct > 0 ? ` · base ${eur(base)} + IVA ${ivaDef.pct}% ${eur(cuotaIva)}` : " · exento de IVA"}`,
-        importe: total, cuentaId: reg.cuentaId, forma: reg.forma, refTipo: "cart", refId: reg.id,
-      };
-      ix >= 0 ? (lista[ix] = mov) : lista.push(mov);
-    } else if (ix >= 0) {
-      lista.splice(ix, 1); // pasa a pendiente: se retira el ingreso
-    }
-
+    // Los contratos cobrados no generan un movimiento cada uno: se agrupan en
+    // un resumen mensual por categoría y cuenta (regenerarResumenCartelera).
     const cartelera = idEdit ? data.cartelera.map((x) => (x.id === idEdit ? reg : x)) : [...data.cartelera, reg];
-    persist({ ...data, cartelera, movimientos: lista });
+    persist(regenerarResumenCartelera({ ...data, cartelera }));
     setAviso(reg.estado === "cobrado"
-      ? `Publicidad anotada y cobrada: ${eur(total)} en ${cuentaNombre(reg.cuentaId)}.`
+      ? `Publicidad cobrada: ${eur(total)} en ${cuentaNombre(reg.cuentaId)}. Se suma al resumen mensual de publicidad.`
       : "Publicidad anotada como pendiente de cobro (no suma al saldo hasta que la marques cobrada).");
     return true;
   };
 
   const borrarCartel = (id) => {
-    persist({
+    persist(regenerarResumenCartelera({
       ...data,
       cartelera: data.cartelera.filter((c) => c.id !== id),
-      movimientos: movs.filter((m) => !(m.refTipo === "cart" && m.refId === id)),
-    });
-    setAviso("Contrato de publicidad eliminado junto con su ingreso.");
+    }));
+    setAviso("Contrato de publicidad eliminado. El resumen mensual se ha vuelto a calcular.");
   };
 
   // ---------- exportar / reiniciar ----------
@@ -2086,7 +2247,7 @@ function TesoreriaClub() {
             personas={data.jugadores} equipos={data.equipos} catSocios={null} cuentas={cuentas}
             tempActiva={tempActiva}
             pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
-            registrarPago={registrarPago} borrarPago={borrarMov}
+            registrarPago={registrarPago} borrarPago={borrarCobroCantera}
             onGuardar={(lista) => persist({ ...data, jugadores: lista })}
             setAviso={setAviso}
           />
@@ -4390,6 +4551,12 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
       {esSocio && (
         <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-900">
           Aquí gestionas las <span className="font-semibold">fichas</span> de los socios (altas, datos y cuota). Para ir marcando quién paga cada mes, usa la subpestaña <span className="font-semibold">«Cobros del mes»</span>: allí verás pagados y pendientes, y cada mes se refleja en la contabilidad como un único movimiento por caja y por banco.
+        </div>
+      )}
+
+      {!esSocio && (
+        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-900">
+          Marca los pagos de cada jugador con el botón <span className="font-semibold">«+ Pago»</span>. En la contabilidad no aparece un apunte por jugador: cada mes se agrupa en <span className="font-semibold">un solo movimiento por equipo y cuenta</span> (efectivo o banco), para que la pestaña Movimientos quede limpia.
         </div>
       )}
 
