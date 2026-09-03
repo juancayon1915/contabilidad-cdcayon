@@ -283,172 +283,6 @@ const vendidas = (desde, hasta) => {
   return d > 0 && h >= d ? h - d + 1 : 0;
 };
 
-// ==================================================================
-// Cobros de socios (libro aparte) y su resumen mensual en la contabilidad
-// ------------------------------------------------------------------
-// Los pagos de cuota de socio se guardan uno a uno en `cobrosSocios`
-// (quién, cuánto, cuándo, forma y cuenta), pero en la contabilidad NO
-// aparecen uno a uno: la app los agrupa en UN movimiento por mes y por
-// cuenta (efectivo o banco). Así el listado de movimientos queda limpio
-// y lo cobrado a los socios cuadra siempre con lo apuntado en el club.
-// ==================================================================
-function cuentaEsEfectivo(cuentas, id) {
-  return (cuentas || []).find((c) => c.id === id)?.tipo === "efectivo";
-}
-// Construye los movimientos-resumen (uno por mes y cuenta) a partir de los cobros.
-function construirResumenSocios(cobros, cuentas) {
-  const map = {};
-  for (const c of cobros || []) {
-    const cid = c.cuentaId;
-    const mes = c.mes || (c.fecha || "").slice(0, 7);
-    if (!mes || !cid) continue;
-    const k = `${mes}|${cid}`;
-    if (!map[k]) map[k] = { mes, cuentaId: cid, total: 0, formas: new Set(), fecha: c.fecha || `${mes}-01` };
-    map[k].total += num(c.importe);
-    map[k].formas.add(c.forma || "Otro");
-    if ((c.fecha || "") > map[k].fecha) map[k].fecha = c.fecha; // fecha del último cobro del mes
-  }
-  return Object.values(map).map((g) => ({
-    id: `auto-soc-${g.mes}-${g.cuentaId}`,
-    fecha: g.fecha,
-    tipo: "ingreso",
-    categoria: "Cuotas de socios",
-    empresa: "",
-    concepto: `Cuotas de socios — ${mesLabel(g.mes)}${cuentaEsEfectivo(cuentas, g.cuentaId) ? " (efectivo)" : " (banco)"}`,
-    importe: r2(g.total),
-    cuentaId: g.cuentaId,
-    forma: g.formas.size === 1 ? [...g.formas][0] : "Varias",
-    auto: "cobroSocios", // marca: lo gestiona la app desde la pestaña Socios
-    conciliado: false,
-  }));
-}
-// Quita del listado los movimientos-resumen (para regenerarlos limpios).
-const sinResumenSocios = (movs) => (movs || []).filter((m) => m.auto !== "cobroSocios");
-// Devuelve una copia de `data` con el resumen mensual de socios recalculado.
-function regenerarResumenSocios(data) {
-  return {
-    ...data,
-    movimientos: [...sinResumenSocios(data.movimientos), ...construirResumenSocios(data.cobrosSocios || [], data.cuentas || [])],
-  };
-}
-
-// ------------------------------------------------------------------
-// Cantera (jugadores): igual que socios, pero el resumen mensual se
-// separa además por EQUIPO, para que en Movimientos quede una línea por
-// mes, equipo y cuenta.
-// ------------------------------------------------------------------
-function nombreEquipoDe(jugadores, jugadorId) {
-  return (jugadores || []).find((j) => j.id === jugadorId)?.equipo || "Cantera";
-}
-function construirResumenCantera(cobros, cuentas, jugadores) {
-  const map = {};
-  for (const c of cobros || []) {
-    const cid = c.cuentaId;
-    const mes = c.mes || (c.fecha || "").slice(0, 7);
-    const equipo = nombreEquipoDe(jugadores, c.jugadorId);
-    if (!mes || !cid) continue;
-    const k = `${mes}|${cid}|${equipo}`;
-    if (!map[k]) map[k] = { mes, cuentaId: cid, equipo, total: 0, formas: new Set(), fecha: c.fecha || `${mes}-01` };
-    map[k].total += num(c.importe);
-    map[k].formas.add(c.forma || "Otro");
-    if ((c.fecha || "") > map[k].fecha) map[k].fecha = c.fecha;
-  }
-  return Object.values(map).map((g) => ({
-    id: `auto-can-${g.mes}-${g.cuentaId}-${g.equipo}`.replace(/\s+/g, "_"),
-    fecha: g.fecha,
-    tipo: "ingreso",
-    categoria: "Cuotas categorías inferiores",
-    empresa: "",
-    concepto: `Cuotas cantera ${g.equipo} — ${mesLabel(g.mes)}${cuentaEsEfectivo(cuentas, g.cuentaId) ? " (efectivo)" : " (banco)"}`,
-    importe: r2(g.total),
-    cuentaId: g.cuentaId,
-    forma: g.formas.size === 1 ? [...g.formas][0] : "Varias",
-    auto: "cobroCantera",
-    conciliado: false,
-  }));
-}
-const sinResumenCantera = (movs) => (movs || []).filter((m) => m.auto !== "cobroCantera");
-function regenerarResumenCantera(data) {
-  return {
-    ...data,
-    movimientos: [...sinResumenCantera(data.movimientos), ...construirResumenCantera(data.cobrosCantera || [], data.cuentas || [], data.jugadores || [])],
-  };
-}
-
-// ------------------------------------------------------------------
-// Publicidad (cartelería): en vez de un movimiento por contrato cobrado,
-// un resumen mensual separado por CATEGORÍA (tipo de cartelería) y cuenta.
-// La ficha de cada contrato con su IVA sigue guardada en la pestaña
-// Publicidad; aquí solo se agrupa el ingreso para la contabilidad.
-// ------------------------------------------------------------------
-function construirResumenCartelera(cartelera, cuentas) {
-  const map = {};
-  for (const c of cartelera || []) {
-    if (c.estado !== "cobrado") continue; // solo lo cobrado suma al saldo
-    const cid = c.cuentaId;
-    const mes = (c.fecha || "").slice(0, 7);
-    const tipo = c.tipo || "estatica";
-    if (!mes || !cid) continue;
-    const k = `${mes}|${cid}|${tipo}`;
-    if (!map[k]) map[k] = { mes, cuentaId: cid, tipo, total: 0, formas: new Set(), fecha: c.fecha };
-    map[k].total += num(c.total);
-    map[k].formas.add(c.forma || "Otro");
-    if ((c.fecha || "") > map[k].fecha) map[k].fecha = c.fecha;
-  }
-  return Object.values(map).map((g) => {
-    const info = (typeof TIPOS_CART !== "undefined" && TIPOS_CART[g.tipo]) || { cat: "Publicidad y patrocinios", label: g.tipo };
-    return {
-      id: `auto-pub-${g.mes}-${g.cuentaId}-${g.tipo}`.replace(/\s+/g, "_"),
-      fecha: g.fecha,
-      tipo: "ingreso",
-      categoria: info.cat,
-      empresa: "",
-      concepto: `Publicidad ${info.label} — ${mesLabel(g.mes)}${cuentaEsEfectivo(cuentas, g.cuentaId) ? " (efectivo)" : " (banco)"}`,
-      importe: r2(g.total),
-      cuentaId: g.cuentaId,
-      forma: g.formas.size === 1 ? [...g.formas][0] : "Varias",
-      auto: "cartelera",
-      conciliado: false,
-    };
-  });
-}
-const sinResumenCartelera = (movs) => (movs || []).filter((m) => m.auto !== "cartelera");
-function regenerarResumenCartelera(data) {
-  return {
-    ...data,
-    movimientos: [...sinResumenCartelera(data.movimientos), ...construirResumenCartelera(data.cartelera || [], data.cuentas || [])],
-  };
-}
-
-// Recalcula los tres resúmenes (socios, cantera y publicidad) de una vez.
-function regenerarResumenes(data) {
-  return regenerarResumenCartelera(regenerarResumenCantera(regenerarResumenSocios(data)));
-}
-// Renumeración de temporada: los socios que pagaron su cuota conservan y se
-// renumeran seguidos (1,2,3…) dentro de su serie; los que no pagaron pierden
-// el número y pasan a "baja" (no se borran, se guardan por si vuelven).
-function renumerarSocios(socios, cobros, tempCerrada) {
-  const pagoCompleto = (s) => {
-    const cuota = num(s.cuota);
-    if (cuota <= 0) return true; // socios sin cuota (p. ej. Honor) conservan su plaza
-    const pg = (cobros || [])
-      .filter((c) => c.socioId === s.id && (c.temporada || temporadaDe(c.fecha)) === tempCerrada)
-      .reduce((a, c) => a + num(c.importe), 0);
-    return pg >= cuota;
-  };
-  const activos = socios.filter((s) => s.activo !== false);
-  const yaBaja = socios.filter((s) => s.activo === false);
-  const nuevos = [];
-  for (const serie of ["general", "empresa", "honor"]) {
-    const delSerie = activos.filter((s) => serieDeCategoria(s.categoria) === serie);
-    const pagados = delSerie.filter(pagoCompleto).sort((a, b) => (a.numero || 0) - (b.numero || 0));
-    const impagados = delSerie.filter((s) => !pagoCompleto(s));
-    pagados.forEach((s, i) => nuevos.push({ ...s, numeroAnterior: s.numero, numero: i + 1, activo: true }));
-    impagados.forEach((s) => nuevos.push({ ...s, numeroAnterior: s.numero, numero: null, activo: false, bajaTemp: tempCerrada }));
-  }
-  return [...nuevos, ...yaBaja];
-}
-
 const cuentasDefecto = () => [
   { id: "cta-banco", nombre: "Banco cuenta 1", tipo: "banco", saldoInicial: 0 },
   { id: "cta-banco2", nombre: "Banco cuenta 2", tipo: "banco", saldoInicial: 0 },
@@ -458,7 +292,7 @@ const cuentasDefecto = () => [
 ];
 
 const defaultData = () => ({
-  version: 8,
+  version: 6,
   config: { nombre: "Mi Club de Fútbol", clave: "" },
   cuentas: cuentasDefecto(),
   categorias: { ingreso: CATS_INGRESO, gasto: CATS_GASTO },
@@ -471,14 +305,12 @@ const defaultData = () => ({
   cartelera: [],
   presupuestos: {},
   movimientos: [],
-  cobrosSocios: [],
-  cobrosCantera: [],
 });
 
 // Migración desde versiones anteriores
 function migrar(old) {
   if (!old) return defaultData();
-  if (old.version === 8) return old;
+  if (old.version === 6) return old;
 
   let d = old;
   // v1 → v2
@@ -518,133 +350,12 @@ function migrar(old) {
   out.config = { clave: "", ...(out.config || {}) };
   // separar apellidos (los antiguos quedan con todo en «nombre»)
   // y añadir los campos nuevos de la ficha de socio (DNI, localidad y género)
-  // «activo» distingue a los socios de alta (activo) de los que se dieron de
-  // baja al renumerar temporada (activo:false, sin número, pero conservados).
-  out.socios = (d.socios || []).map((s) => ({ apellidos: "", categoria: "", dni: "", localidad: "", genero: "", activo: true, ...s }));
+  out.socios = (d.socios || []).map((s) => ({ apellidos: "", categoria: "", dni: "", localidad: "", genero: "", ...s }));
   out.jugadores = (d.jugadores || []).map((j) => ({ apellidos: "", ...j }));
-
-  // → v7: cobros de socios en un libro aparte + resumen mensual en la contabilidad.
-  // Si los datos vienen de una versión anterior (sin cobrosSocios), convertimos
-  // los pagos de socio antiguos (uno por socio) al nuevo libro y dejamos en la
-  // contabilidad un único movimiento-resumen por mes y cuenta. Los saldos NO
-  // cambian: la suma de cada mes y cuenta es exactamente la misma.
-  if (Array.isArray(d.cobrosSocios)) {
-    out.cobrosSocios = d.cobrosSocios;
-  } else {
-    out.cobrosSocios = [];
-    const resto = [];
-    for (const m of out.movimientos || []) {
-      if (m.refTipo === "socio") {
-        out.cobrosSocios.push({
-          id: uid("cs"),
-          socioId: m.refId,
-          temporada: temporadaDe(m.fecha),
-          mes: mesKey(m.fecha),
-          fecha: m.fecha,
-          importe: num(m.importe),
-          forma: m.forma || "Efectivo",
-          cuentaId: m.cuentaId,
-        });
-      } else {
-        resto.push(m);
-      }
-    }
-    out.movimientos = resto;
-  }
-
-  // → v8: cantera con su libro de cobros + resumen mensual por equipo, y
-  // publicidad como resumen mensual por categoría (sustituye a los apuntes
-  // uno por contrato). Los saldos NO cambian: se conserva la suma por cuenta.
-  if (Array.isArray(d.cobrosCantera)) {
-    out.cobrosCantera = d.cobrosCantera;
-  } else {
-    out.cobrosCantera = [];
-    const resto2 = [];
-    for (const m of out.movimientos || []) {
-      if (m.refTipo === "jugador") {
-        out.cobrosCantera.push({
-          id: uid("cc"),
-          jugadorId: m.refId,
-          temporada: temporadaDe(m.fecha),
-          mes: mesKey(m.fecha),
-          fecha: m.fecha,
-          importe: num(m.importe),
-          forma: m.forma || "Efectivo",
-          cuentaId: m.cuentaId,
-        });
-      } else {
-        resto2.push(m);
-      }
-    }
-    out.movimientos = resto2;
-  }
-  // Quitar los movimientos antiguos de publicidad (uno por contrato): se
-  // sustituyen por el resumen mensual generado desde la cartelera.
-  out.movimientos = (out.movimientos || []).filter((m) => m.refTipo !== "cart");
-
-  out.version = 8;
-  return regenerarResumenes(out);
+  return out;
 }
 
 const emptyMov = () => ({ fecha: hoyISO(), tipo: "ingreso", categoria: "", empresa: "", concepto: "", importe: "", cuentaId: "", destinoId: "", forma: "Transferencia" });
-
-// ==================================================================
-// Casillas de selección para las tablas (marcar varias filas y borrarlas
-// de una vez). Se usan igual en Socios, Cantera, Publicidad, Caja,
-// Traspasos, Taquilla y Cobros del mes.
-// ==================================================================
-
-// Casilla de la cabecera: marca o desmarca TODAS las filas visibles.
-function CasillaTodo({ ids, selec, setSelec, titulo = "Marcar o desmarcar todo lo que se ve" }) {
-  const todas = ids.length > 0 && ids.every((id) => selec.includes(id));
-  return (
-    <input type="checkbox" className="accent-amber-500 w-4 h-4 align-middle cursor-pointer" title={titulo}
-      checked={todas}
-      onChange={(e) => setSelec(e.target.checked
-        ? [...new Set([...selec, ...ids])]
-        : selec.filter((id) => !ids.includes(id)))} />
-  );
-}
-
-// Casilla de una fila.
-function CasillaFila({ id, selec, setSelec, titulo = "Marcar esta fila" }) {
-  return (
-    <input type="checkbox" className="accent-amber-500 w-4 h-4 align-middle cursor-pointer" title={titulo}
-      checked={selec.includes(id)}
-      onChange={(e) => setSelec(e.target.checked ? [...selec, id] : selec.filter((x) => x !== id))} />
-  );
-}
-
-// Barra amarilla que aparece cuando hay filas marcadas, con los botones de acción.
-function BarraSelec({ n, etiqueta = "seleccionado", onLimpiar, children }) {
-  if (n === 0) return null;
-  return (
-    <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center gap-3 text-sm">
-      <span className="font-semibold">{n} {etiqueta}{n === 1 ? "" : "s"}</span>
-      {children}
-      <button onClick={onLimpiar} className="text-slate-500 hover:underline ml-auto">Quitar selección</button>
-    </div>
-  );
-}
-
-// Botón de borrado con confirmación en dos pasos («Borrar» → «¿Seguro? Sí / No»),
-// para no borrar nada sin querer.
-function BotonBorrarSelec({ n, texto = "Borrar selección", pregunta, onConfirmar }) {
-  const [confirma, setConfirma] = useState(false);
-  useEffect(() => { if (n === 0) setConfirma(false); }, [n]);
-  if (confirma) {
-    return (
-      <span className="inline-flex items-center gap-2">
-        <span className="text-red-600 font-semibold">{pregunta ? `${pregunta} (${n})` : `¿Borrar ${n}?`}</span>
-        <button onClick={() => { onConfirmar(); setConfirma(false); }}
-          className="bg-red-600 hover:bg-red-700 text-white rounded px-2 py-0.5 text-xs font-semibold">Sí</button>
-        <button onClick={() => setConfirma(false)}
-          className="border border-slate-300 rounded px-2 py-0.5 text-xs">No</button>
-      </span>
-    );
-  }
-  return <button onClick={() => setConfirma(true)} className="text-red-600 hover:underline font-semibold">{texto}</button>;
-}
 
 // ==================================================================
 // Editor de un movimiento «en línea»: se muestra como una fila extra
@@ -812,6 +523,7 @@ function TesoreriaClub() {
   const [pendienteConfirm, setPendienteConfirm] = useState(null);
   const [selec, setSelec] = useState([]);
   const [confirmaBulk, setConfirmaBulk] = useState(false);
+  const [extractoBanco, setExtractoBanco] = useState(""); // saldo que aparece en el extracto del banco, para comparar con el saldo conciliado
   const [printData, setPrintData] = useState(null);
   const [ultimoGuardado, setUltimoGuardado] = useState(null);
   const [autoBackup, setAutoBackup] = useState({ estado: "cargando" });
@@ -1081,8 +793,6 @@ function TesoreriaClub() {
   // ---------- derivados ----------
   const movs = data ? data.movimientos : [];
   const cuentas = data ? data.cuentas : [];
-  const cobrosSocios = data ? (data.cobrosSocios || []) : [];
-  const cobrosCantera = data ? (data.cobrosCantera || []) : [];
   const cuentaNombre = useCallback((id) => cuentas.find((c) => c.id === id)?.nombre || "—", [cuentas]);
 
   const saldos = useMemo(() => {
@@ -1173,32 +883,15 @@ function TesoreriaClub() {
       .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
   }, [movs, filtro]);
 
-  // Lo pagado por socios y cantera se lee de sus libros de cobros.
-  const pagadoPor = useCallback((refTipo, refId) => {
-    if (refTipo === "socio")
-      return cobrosSocios
-        .filter((c) => c.socioId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
-        .reduce((s, c) => s + num(c.importe), 0);
-    if (refTipo === "jugador")
-      return cobrosCantera
-        .filter((c) => c.jugadorId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
-        .reduce((s, c) => s + num(c.importe), 0);
-    return movs.filter((m) => m.refTipo === refTipo && m.refId === refId && temporadaDe(m.fecha) === tempActiva)
-        .reduce((s, m) => s + num(m.importe), 0);
-  }, [movs, cobrosSocios, cobrosCantera, tempActiva]);
+  const pagadoPor = useCallback((refTipo, refId) =>
+    movs.filter((m) => m.refTipo === refTipo && m.refId === refId && temporadaDe(m.fecha) === tempActiva)
+        .reduce((s, m) => s + num(m.importe), 0),
+  [movs, tempActiva]);
 
-  const pagosDe = useCallback((refTipo, refId) => {
-    if (refTipo === "socio")
-      return cobrosSocios
-        .filter((c) => c.socioId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
-        .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-    if (refTipo === "jugador")
-      return cobrosCantera
-        .filter((c) => c.jugadorId === refId && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
-        .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-    return movs.filter((m) => m.refTipo === refTipo && m.refId === refId && temporadaDe(m.fecha) === tempActiva)
-        .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-  }, [movs, cobrosSocios, cobrosCantera, tempActiva]);
+  const pagosDe = useCallback((refTipo, refId) =>
+    movs.filter((m) => m.refTipo === refTipo && m.refId === refId && temporadaDe(m.fecha) === tempActiva)
+        .sort((a, b) => (a.fecha < b.fecha ? 1 : -1)),
+  [movs, tempActiva]);
 
   // ---------- pendiente de cobro (para el Resumen y el informe) ----------
   // Junta en un solo sitio todo lo que le deben al club esta temporada:
@@ -1209,7 +902,6 @@ function TesoreriaClub() {
     const cuotasDe = (lista, refTipo) => {
       let n = 0, total = 0;
       for (const p of lista || []) {
-        if (p.activo === false) continue; // socios de baja no deben cuota
         const cuota = num(p.cuota);
         if (cuota <= 0) continue;
         const debe = r2(cuota - pagadoPor(refTipo, p.id));
@@ -1317,24 +1009,12 @@ function TesoreriaClub() {
     setAviso("Datos grabados correctamente. (La aplicación también graba sola tras cada cambio.)");
   };
 
-  // Borra de una vez todos los movimientos marcados (se usa en Movimientos,
-  // Caja y Traspasos). Las líneas-resumen automáticas (socios, cantera y
-  // publicidad) no se tocan: se gestionan desde sus pestañas.
-  const borrarMovsLote = (ids) => {
-    const marcados = ids.filter((id) => movs.some((m) => m.id === id));
-    const aBorrar = marcados.filter((id) => !movs.find((m) => m.id === id)?.auto);
-    const protegidos = marcados.length - aBorrar.length;
-    persist({ ...data, movimientos: movs.filter((m) => !aBorrar.includes(m.id)) });
-    setAviso(
-      `${aBorrar.length} movimiento${aBorrar.length === 1 ? "" : "s"} borrado${aBorrar.length === 1 ? "" : "s"}.` +
-      (protegidos > 0 ? ` (${protegidos} línea${protegidos === 1 ? "" : "s"}-resumen no se ${protegidos === 1 ? "ha" : "han"} tocado: se gestionan desde Socios, Cantera o Publicidad.)` : "")
-    );
-  };
-
   const borrarSeleccionados = () => {
-    borrarMovsLote(selec);
+    const n = selec.length;
+    persist({ ...data, movimientos: movs.filter((m) => !selec.includes(m.id)) });
     setSelec([]);
     setConfirmaBulk(false);
+    setAviso(`${n} movimiento${n === 1 ? "" : "s"} borrado${n === 1 ? "" : "s"}.`);
   };
 
   const imprimirMovs = () => {
@@ -1385,18 +1065,6 @@ function TesoreriaClub() {
   // propio movimiento (en cualquier apartado: Movimientos, Caja…), en vez de
   // subir hasta el formulario de arriba de todo.
   const editarMov = (m) => {
-    if (m.auto === "cobroSocios") {
-      setAviso("Este movimiento resume los cobros de socios del mes. Se gestiona desde la pestaña Socios → Cobros del mes.");
-      return;
-    }
-    if (m.auto === "cobroCantera") {
-      setAviso("Este movimiento resume los cobros de cantera del mes. Se gestiona desde la pestaña Cantera (con el botón «+ Pago» de cada jugador).");
-      return;
-    }
-    if (m.auto === "cartelera") {
-      setAviso("Este movimiento resume la publicidad cobrada del mes. Se gestiona desde la pestaña Publicidad.");
-      return;
-    }
     setEditId(m.id);
     setEditForm({ fecha: m.fecha, tipo: m.tipo, categoria: m.tipo === "traspaso" ? "" : m.categoria,
       empresa: m.empresa || "", concepto: m.concepto, importe: String(m.importe), cuentaId: m.cuentaId, destinoId: m.destinoId || "", forma: m.forma || "Transferencia" });
@@ -1414,146 +1082,26 @@ function TesoreriaClub() {
     setAviso("Movimiento copiado al formulario con la fecha de hoy: revisa fecha e importe y pulsa «Anotar».");
   };
 
-  const borrarMov = (id) => {
-    const m = movs.find((x) => x.id === id);
-    if (m?.auto === "cobroSocios") {
-      setAviso("Este movimiento resume los cobros de socios del mes. Para cambiarlo, quita el cobro en la pestaña Socios → Cobros del mes.");
-      return;
-    }
-    if (m?.auto === "cobroCantera") {
-      setAviso("Este movimiento resume los cobros de cantera del mes. Para cambiarlo, quita el pago en la pestaña Cantera.");
-      return;
-    }
-    if (m?.auto === "cartelera") {
-      setAviso("Este movimiento resume la publicidad cobrada del mes. Para cambiarlo, edítalo en la pestaña Publicidad.");
-      return;
-    }
-    persist({ ...data, movimientos: movs.filter((m) => m.id !== id) });
-  };
+  const borrarMov = (id) => persist({ ...data, movimientos: movs.filter((m) => m.id !== id) });
 
   const anotarRapido = (mov) => {
     persist({ ...data, movimientos: [...movs, { ...mov, id: uid("m") }] });
     setAviso("Movimiento anotado en caja.");
   };
 
-  // ---------- cobros de socios (libro aparte + resumen mensual automático) ----------
-  const guardarCobros = (nuevos) => persist(regenerarResumenSocios({ ...data, cobrosSocios: nuevos }));
-
-  const registrarCobroSocio = ({ socioId, fecha, importe, cuentaId, forma }) => {
-    const imp = num(importe);
-    if (imp <= 0) { setAviso("Escribe un importe mayor que cero."); return false; }
-    if (!cuentaId) { setAviso("Elige la cuenta donde entra el dinero."); return false; }
-    if (!fecha) { setAviso("Falta la fecha del cobro."); return false; }
-    const cobro = {
-      id: uid("cs"), socioId, temporada: temporadaDe(fecha),
-      mes: mesKey(fecha), fecha, importe: imp, cuentaId, forma: forma || "Efectivo",
-    };
-    guardarCobros([...cobrosSocios, cobro]);
-    setAviso("Cobro de socio registrado. Se suma al resumen mensual de la contabilidad.");
-    return true;
-  };
-
-  const borrarCobroSocio = (id) => {
-    guardarCobros(cobrosSocios.filter((c) => c.id !== id));
-    setAviso("Cobro eliminado. El resumen mensual se ha vuelto a calcular.");
-  };
-
-  // Borrar de golpe varios cobros de socio (casillas marcadas).
-  const borrarCobrosSocioLote = (ids) => {
-    if (!ids || ids.length === 0) return;
-    const set = new Set(ids);
-    const n = cobrosSocios.filter((c) => set.has(c.id)).length;
-    guardarCobros(cobrosSocios.filter((c) => !set.has(c.id)));
-    setAviso(`${n} pago${n === 1 ? "" : "s"} de socio borrado${n === 1 ? "" : "s"}. El resumen mensual se ha vuelto a calcular.`);
-  };
-
-  // Cobrar de golpe a varios socios marcados (pestaña «Cobros del mes»).
-  const registrarCobrosSocioLote = (lista) => {
-    const nuevos = (lista || [])
-      .filter((x) => num(x.importe) > 0 && x.cuentaId && x.fecha)
-      .map((x) => ({
-        id: uid("cs"), socioId: x.socioId, temporada: temporadaDe(x.fecha),
-        mes: mesKey(x.fecha), fecha: x.fecha, importe: num(x.importe),
-        cuentaId: x.cuentaId, forma: x.forma || "Efectivo",
-      }));
-    if (nuevos.length === 0) { setAviso("No hay nada que cobrar en la selección."); return; }
-    guardarCobros([...cobrosSocios, ...nuevos]);
-    setAviso(`${nuevos.length} socio${nuevos.length === 1 ? "" : "s"} cobrado${nuevos.length === 1 ? "" : "s"}. Se suman al resumen mensual de la contabilidad.`);
-  };
-
-  // ---------- cobros de cantera (libro aparte + resumen mensual por equipo) ----------
-  const guardarCobrosCant = (nuevos) => persist(regenerarResumenCantera({ ...data, cobrosCantera: nuevos }));
-
-  const registrarCobroCantera = ({ jugadorId, fecha, importe, cuentaId, forma }) => {
-    const imp = num(importe);
-    if (imp <= 0) { setAviso("Escribe un importe mayor que cero."); return false; }
-    if (!cuentaId) { setAviso("Elige la cuenta donde entra el dinero."); return false; }
-    if (!fecha) { setAviso("Falta la fecha del pago."); return false; }
-    const cobro = {
-      id: uid("cc"), jugadorId, temporada: temporadaDe(fecha),
-      mes: mesKey(fecha), fecha, importe: imp, cuentaId, forma: forma || "Efectivo",
-    };
-    guardarCobrosCant([...cobrosCantera, cobro]);
-    setAviso("Pago de cantera registrado. Se suma al resumen mensual por equipo.");
-    return true;
-  };
-
-  const borrarCobroCantera = (id) => {
-    guardarCobrosCant(cobrosCantera.filter((c) => c.id !== id));
-    setAviso("Pago eliminado. El resumen mensual se ha vuelto a calcular.");
-  };
-
-  // Borrar de golpe varios pagos de cantera (casillas marcadas).
-  const borrarCobrosCanteraLote = (ids) => {
-    if (!ids || ids.length === 0) return;
-    const set = new Set(ids);
-    const n = cobrosCantera.filter((c) => set.has(c.id)).length;
-    guardarCobrosCant(cobrosCantera.filter((c) => !set.has(c.id)));
-    setAviso(`${n} pago${n === 1 ? "" : "s"} de cantera borrado${n === 1 ? "" : "s"}. El resumen mensual se ha vuelto a calcular.`);
-  };
-
-  // ---------- pagos de cuota (socios → su libro; cantera → su libro) ----------
+  // ---------- pagos de cuota ----------
   const registrarPago = ({ refTipo, refId, nombre, extra, fecha, importe, cuentaId, forma }) => {
-    if (refTipo === "socio") return registrarCobroSocio({ socioId: refId, fecha, importe, cuentaId, forma });
-    if (refTipo === "jugador") return registrarCobroCantera({ jugadorId: refId, fecha, importe, cuentaId, forma });
     const imp = num(importe);
     if (imp <= 0) return setAviso("Escribe un importe mayor que cero.");
     if (!cuentaId) return setAviso("Elige la cuenta donde entra el dinero.");
     const mov = {
       id: uid("p"), fecha, tipo: "ingreso",
-      categoria: "Cuotas categorías inferiores",
-      concepto: `Cuota ${extra} — ${nombre} (${tempActiva})`,
+      categoria: refTipo === "socio" ? "Cuotas de socios" : "Cuotas categorías inferiores",
+      concepto: `Cuota ${refTipo === "socio" ? `socio nº ${extra}` : extra} — ${nombre} (${tempActiva})`,
       importe: imp, cuentaId, forma, refTipo, refId,
     };
     persist({ ...data, movimientos: [...movs, mov] });
     setAviso("Pago registrado como ingreso.");
-  };
-
-  // ---------- subpestaña de Socios (Padrón / Cobros del mes) ----------
-  const [subSocios, setSubSocios] = useState("padron");
-
-  // ---------- renumeración de temporada ----------
-  const [confirmaRenum, setConfirmaRenum] = useState(false);
-  const previewRenum = useMemo(() => {
-    const socios = data?.socios || [];
-    const activos = socios.filter((s) => s.activo !== false);
-    const pagoCompleto = (s) => {
-      const cuota = num(s.cuota);
-      if (cuota <= 0) return true; // socios sin cuota (p. ej. Honor) conservan su plaza
-      const pg = cobrosSocios
-        .filter((c) => c.socioId === s.id && (c.temporada || temporadaDe(c.fecha)) === tempActiva)
-        .reduce((a, c) => a + num(c.importe), 0);
-      return pg >= cuota;
-    };
-    const mantienen = activos.filter(pagoCompleto).length;
-    const bajas = activos.length - mantienen;
-    return { mantienen, bajas };
-  }, [data, cobrosSocios, tempActiva]);
-
-  const renumerarTemporada = () => {
-    persist({ ...data, socios: renumerarSocios(data.socios, cobrosSocios, tempActiva) });
-    setConfirmaRenum(false);
-    setAviso("Socios renumerados. Los que no pagaron han pasado a «bajas»; se conservan por si vuelven.");
   };
 
   // ---------- taquilla ----------
@@ -1611,19 +1159,6 @@ function TesoreriaClub() {
     setAviso("Taquilla eliminada junto con sus ingresos.");
   };
 
-  // Borrar de golpe varias taquillas marcadas (con sus ingresos).
-  const borrarTaquillasLote = (ids) => {
-    if (!ids || ids.length === 0) return;
-    const set = new Set(ids);
-    const n = (data.taquillas || []).filter((t) => set.has(t.id)).length;
-    persist({
-      ...data,
-      taquillas: (data.taquillas || []).filter((t) => !set.has(t.id)),
-      movimientos: movs.filter((m) => !((m.refTipo === "taq-ent" || m.refTipo === "taq-rifa") && set.has(m.refId))),
-    });
-    setAviso(`${n} taquilla${n === 1 ? "" : "s"} borrada${n === 1 ? "" : "s"} junto con sus ingresos.`);
-  };
-
   // ---------- cartelería / publicidad ----------
   const guardarCartel = (c, idEdit) => {
     const base = num(c.base);
@@ -1642,34 +1177,35 @@ function TesoreriaClub() {
       estado: c.estado, cuentaId: c.cuentaId, forma: c.forma,
     };
 
-    // Los contratos cobrados no generan un movimiento cada uno: se agrupan en
-    // un resumen mensual por categoría y cuenta (regenerarResumenCartelera).
+    let lista = [...movs];
+    const ix = lista.findIndex((m) => m.refTipo === "cart" && m.refId === reg.id);
+    if (reg.estado === "cobrado") {
+      const mov = {
+        id: ix >= 0 ? lista[ix].id : uid("mc"),
+        fecha: reg.fecha, tipo: "ingreso", categoria: TIPOS_CART[reg.tipo].cat,
+        concepto: `Publicidad ${TIPOS_CART[reg.tipo].label} — ${reg.cliente}${reg.concepto ? ` (${reg.concepto})` : ""}${ivaDef.pct > 0 ? ` · base ${eur(base)} + IVA ${ivaDef.pct}% ${eur(cuotaIva)}` : " · exento de IVA"}`,
+        importe: total, cuentaId: reg.cuentaId, forma: reg.forma, refTipo: "cart", refId: reg.id,
+      };
+      ix >= 0 ? (lista[ix] = mov) : lista.push(mov);
+    } else if (ix >= 0) {
+      lista.splice(ix, 1); // pasa a pendiente: se retira el ingreso
+    }
+
     const cartelera = idEdit ? data.cartelera.map((x) => (x.id === idEdit ? reg : x)) : [...data.cartelera, reg];
-    persist(regenerarResumenCartelera({ ...data, cartelera }));
+    persist({ ...data, cartelera, movimientos: lista });
     setAviso(reg.estado === "cobrado"
-      ? `Publicidad cobrada: ${eur(total)} en ${cuentaNombre(reg.cuentaId)}. Se suma al resumen mensual de publicidad.`
+      ? `Publicidad anotada y cobrada: ${eur(total)} en ${cuentaNombre(reg.cuentaId)}.`
       : "Publicidad anotada como pendiente de cobro (no suma al saldo hasta que la marques cobrada).");
     return true;
   };
 
   const borrarCartel = (id) => {
-    persist(regenerarResumenCartelera({
+    persist({
       ...data,
       cartelera: data.cartelera.filter((c) => c.id !== id),
-    }));
-    setAviso("Contrato de publicidad eliminado. El resumen mensual se ha vuelto a calcular.");
-  };
-
-  // Borrar de golpe varios contratos de publicidad (casillas marcadas).
-  const borrarCartelesLote = (ids) => {
-    if (!ids || ids.length === 0) return;
-    const set = new Set(ids);
-    const n = (data.cartelera || []).filter((c) => set.has(c.id)).length;
-    persist(regenerarResumenCartelera({
-      ...data,
-      cartelera: (data.cartelera || []).filter((c) => !set.has(c.id)),
-    }));
-    setAviso(`${n} contrato${n === 1 ? "" : "s"} de publicidad borrado${n === 1 ? "" : "s"}. El resumen mensual se ha vuelto a calcular.`);
+      movimientos: movs.filter((m) => !(m.refTipo === "cart" && m.refId === id)),
+    });
+    setAviso("Contrato de publicidad eliminado junto con su ingreso.");
   };
 
   // ---------- exportar / reiniciar ----------
@@ -2128,7 +1664,7 @@ function TesoreriaClub() {
                   <option value="gasto">Solo gastos</option>
                   <option value="traspaso">Traspasos</option>
                 </select>
-                <select value={filtro.cuenta} onChange={(e) => setFiltro({ ...filtro, cuenta: e.target.value })} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                <select value={filtro.cuenta} onChange={(e) => { setFiltro({ ...filtro, cuenta: e.target.value }); setExtractoBanco(""); }} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
                   <option value="todas">Todas las cuentas</option>
                   {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                 </select>
@@ -2155,16 +1691,33 @@ function TesoreriaClub() {
                 </button>
               </div>
               {conciliacion && (
-                <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
-                  <span className="font-bold text-zinc-900">Conciliación · {conciliacion.cuenta.nombre}</span>
-                  <span className="tabular-nums">Saldo conciliado (debe coincidir con el extracto): <b className="text-zinc-900">{eur(conciliacion.saldoConc)}</b></span>
-                  {conciliacion.pendientes > 0 ? (
-                    <span className="tabular-nums text-amber-800">
-                      {conciliacion.pendientes} movimiento{conciliacion.pendientes === 1 ? "" : "s"} sin conciliar ({conciliacion.sumaPend >= 0 ? "+" : ""}{eur(conciliacion.sumaPend)})
-                    </span>
-                  ) : (
-                    <span className="text-emerald-700 font-semibold">✓ Todo conciliado</span>
-                  )}
+                <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex flex-col gap-1.5 text-sm">
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+                    <span className="font-bold text-zinc-900">Conciliación · {conciliacion.cuenta.nombre}</span>
+                    <span className="tabular-nums">Saldo conciliado (debe coincidir con el extracto): <b className="text-zinc-900">{eur(conciliacion.saldoConc)}</b></span>
+                    {conciliacion.pendientes > 0 ? (
+                      <span className="tabular-nums text-amber-800">
+                        {conciliacion.pendientes} movimiento{conciliacion.pendientes === 1 ? "" : "s"} sin conciliar ({conciliacion.sumaPend >= 0 ? "+" : ""}{eur(conciliacion.sumaPend)})
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700 font-semibold">✓ Todo conciliado</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-600" htmlFor="extractoBancoInput">Saldo según extracto del banco (€):</label>
+                    <input id="extractoBancoInput" inputMode="decimal" placeholder="p. ej. 1234,56" value={extractoBanco}
+                      onChange={(e) => setExtractoBanco(e.target.value.replace(",", "."))}
+                      className="border border-slate-300 rounded-lg px-2 py-1 text-sm w-32 tabular-nums bg-white" />
+                    {extractoBanco.trim() !== "" && !isNaN(parseFloat(extractoBanco)) && (
+                      Math.round((num(extractoBanco) - conciliacion.saldoConc) * 100) === 0 ? (
+                        <span className="text-emerald-700 font-semibold">✓ Coincide con el extracto</span>
+                      ) : (
+                        <span className="text-red-700 font-bold">
+                          ⚠ No coincide con el extracto. Diferencia: {num(extractoBanco) - conciliacion.saldoConc >= 0 ? "+" : ""}{eur(num(extractoBanco) - conciliacion.saldoConc)}
+                        </span>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
               {selec.length > 0 && (
@@ -2267,7 +1820,7 @@ function TesoreriaClub() {
               persist({ ...data, movimientos: esEdicion ? movs.map((m) => (m.id === mov.id ? mov : m)) : [...movs, mov] });
               setAviso(esEdicion ? "Traspaso actualizado." : `Traspaso grabado: ${eur(mov.importe)} de ${cuentaNombre(mov.cuentaId)} a ${cuentaNombre(mov.destinoId)}.`);
             }}
-            borrarMov={borrarMov} borrarMovsLote={borrarMovsLote}
+            borrarMov={borrarMov}
           />
         )}
 
@@ -2275,7 +1828,7 @@ function TesoreriaClub() {
         {tab === "taquilla" && (
           <PanelTaquilla
             taquillas={data.taquillas} cuentas={cuentas} tempActiva={tempActiva}
-            guardarTaquilla={guardarTaquilla} borrarTaquilla={borrarTaquilla} borrarTaquillasLote={borrarTaquillasLote} setAviso={setAviso}
+            guardarTaquilla={guardarTaquilla} borrarTaquilla={borrarTaquilla} setAviso={setAviso}
           />
         )}
 
@@ -2283,7 +1836,7 @@ function TesoreriaClub() {
         {tab === "publicidad" && (
           <PanelCarteleria
             cartelera={data.cartelera} cuentas={cuentas} tempActiva={tempActiva}
-            guardarCartel={guardarCartel} borrarCartel={borrarCartel} borrarCartelesLote={borrarCartelesLote} cuentaNombre={cuentaNombre}
+            guardarCartel={guardarCartel} borrarCartel={borrarCartel} cuentaNombre={cuentaNombre}
           />
         )}
 
@@ -2291,7 +1844,7 @@ function TesoreriaClub() {
         {tab === "caja" && (
           <PanelCaja
             cuentas={cuentas} movs={movs} saldos={saldos} cuentaNombre={cuentaNombre}
-            categorias={data.categorias} anotarRapido={anotarRapido} editarMov={editarMov} borrarMov={borrarMov} borrarMovsLote={borrarMovsLote}
+            categorias={data.categorias} anotarRapido={anotarRapido} editarMov={editarMov} borrarMov={borrarMov}
             pedirConfirmacion={pedirConfirmacion}
             editId={editId} editForm={editForm} setEditForm={setEditForm}
             guardarEdicion={guardarEdicion} cancelarEdicion={cancelarEdicion}
@@ -2300,66 +1853,15 @@ function TesoreriaClub() {
 
         {/* ------------------ SOCIOS ------------------ */}
         {tab === "socios" && (
-          <div className="space-y-4">
-            {/* Subpestañas: Padrón (fichas) y Cobros del mes (hoja mensual) */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
-                {[["padron", "Padrón de socios"], ["cobros", "Cobros del mes"]].map(([id, txt]) => (
-                  <button key={id} onClick={() => setSubSocios(id)}
-                    className={`px-4 py-1.5 rounded-lg text-sm font-semibold ${subSocios === id ? "bg-zinc-900 text-amber-300" : "text-slate-600 hover:bg-slate-100"}`}>
-                    {txt}
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => setConfirmaRenum(true)}
-                className="ml-auto border border-amber-300 bg-amber-50 text-amber-800 rounded-lg px-3 py-2 text-sm font-semibold hover:bg-amber-100">
-                Renumerar temporada
-              </button>
-            </div>
-
-            {subSocios === "padron" && (
-              <PanelCuotas
-                modo="socio" titulo="Socios"
-                personas={data.socios} equipos={null} catSocios={data.catSocios} cuentas={cuentas}
-                tempActiva={tempActiva}
-                pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
-                registrarPago={registrarPago} borrarPago={borrarCobroSocio} borrarPagosLote={borrarCobrosSocioLote}
-                onGuardar={(lista) => persist({ ...data, socios: lista })}
-                setAviso={setAviso}
-              />
-            )}
-
-            {subSocios === "cobros" && (
-              <PanelCobrosMes
-                socios={data.socios} cuentas={cuentas} tempActiva={tempActiva}
-                cobrosSocios={cobrosSocios} pagadoPor={pagadoPor}
-                registrarCobroSocio={registrarCobroSocio} borrarCobroSocio={borrarCobroSocio}
-                borrarCobrosLote={borrarCobrosSocioLote} registrarCobrosLote={registrarCobrosSocioLote}
-                cuentaNombre={cuentaNombre} setAviso={setAviso}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Aviso de renumeración de temporada */}
-        {confirmaRenum && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={() => setConfirmaRenum(false)}>
-            <div className="bg-white rounded-xl p-5 w-full max-w-lg space-y-3" onClick={(e) => e.stopPropagation()}>
-              <h3 className="font-bold text-lg">Renumerar socios para la temporada nueva</h3>
-              <p className="text-sm text-slate-600">
-                Tomando como referencia la temporada <span className="font-semibold">{tempActiva}</span>:
-              </p>
-              <ul className="text-sm text-slate-700 space-y-1 bg-slate-50 rounded-lg p-3">
-                <li>· <span className="font-semibold text-emerald-700">{previewRenum.mantienen}</span> socios que pagaron la cuota completa conservan y se renumeran seguidos (1, 2, 3…), llenando los huecos.</li>
-                <li>· <span className="font-semibold text-red-600">{previewRenum.bajas}</span> socios que no pagaron pierden el número y pasan a «bajas». <span className="text-slate-500">No se borran: se guardan por si vuelven, y puedes reactivarlos.</span></li>
-              </ul>
-              <p className="text-xs text-slate-500">Los socios de Empresa y de Honor se renumeran por separado, en su propia serie. Haz una copia de seguridad antes (Ajustes → Copia de seguridad) por si quieres deshacerlo.</p>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => setConfirmaRenum(false)} className="border border-slate-300 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">Cancelar</button>
-                <button onClick={renumerarTemporada} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-semibold rounded-lg px-4 py-2 text-sm">Sí, renumerar</button>
-              </div>
-            </div>
-          </div>
+          <PanelCuotas
+            modo="socio" titulo="Socios"
+            personas={data.socios} equipos={null} catSocios={data.catSocios} cuentas={cuentas}
+            tempActiva={tempActiva}
+            pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
+            registrarPago={registrarPago} borrarPago={borrarMov}
+            onGuardar={(lista) => persist({ ...data, socios: lista })}
+            setAviso={setAviso}
+          />
         )}
 
         {/* ------------------ CANTERA ------------------ */}
@@ -2369,7 +1871,7 @@ function TesoreriaClub() {
             personas={data.jugadores} equipos={data.equipos} catSocios={null} cuentas={cuentas}
             tempActiva={tempActiva}
             pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
-            registrarPago={registrarPago} borrarPago={borrarCobroCantera} borrarPagosLote={borrarCobrosCanteraLote}
+            registrarPago={registrarPago} borrarPago={borrarMov}
             onGuardar={(lista) => persist({ ...data, jugadores: lista })}
             setAviso={setAviso}
           />
@@ -3205,7 +2707,7 @@ function PanelPresupuesto({ data, persist, tempActiva, porCategoria, totalesTemp
 // ==================================================================
 // Panel de Traspasos entre cuentas del club
 // ==================================================================
-function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion, onGuardar, borrarMov, borrarMovsLote }) {
+function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion, onGuardar, borrarMov }) {
   const vacio = () => ({
     fecha: hoyISO(),
     cuentaId: cuentas.find((c) => c.tipo === "efectivo")?.id || cuentas[0]?.id || "",
@@ -3216,7 +2718,6 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
   const [editId, setEditId] = useState(null);
   const [editF, setEditF] = useState(vacio());   // datos del traspaso que se edita en línea
   const [aviso, setAvisoLocal] = useState("");
-  const [selec, setSelec] = useState([]);       // traspasos marcados con la casilla
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -3277,11 +2778,6 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
   const lista = movs
     .filter((m) => m.tipo === "traspaso")
     .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
-
-  // ---------- acciones en bloque (casillas marcadas) ----------
-  const idsVisibles = lista.map((m) => m.id);
-  const marcados = selec.filter((id) => idsVisibles.includes(id));
-  const borrarSeleccion = () => { borrarMovsLote(marcados); setSelec([]); };
 
   return (
     <>
@@ -3364,23 +2860,13 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
 
       {/* Historial */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center gap-2">
-          <h3 className="font-bold mr-auto">Historial de traspasos ({lista.length})</h3>
-          <span className="text-xs text-slate-500">Marca las casillas para borrar varios de una vez</span>
+        <div className="px-4 py-3 border-b border-slate-200">
+          <h3 className="font-bold">Historial de traspasos ({lista.length})</h3>
         </div>
-
-        <BarraSelec n={marcados.length} etiqueta="traspaso marcado" onLimpiar={() => setSelec([])}>
-          <BotonBorrarSelec n={marcados.length} texto="Borrar los traspasos marcados"
-            pregunta="¿Borrar estos traspasos?" onConfirmar={borrarSeleccion} />
-        </BarraSelec>
-
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <th className="pl-4 pr-1 py-2 w-8">
-                <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
-              </th>
-              <th className="px-2 py-2">Fecha</th>
+              <th className="px-4 py-2">Fecha</th>
               <th className="px-2 py-2">Desde</th>
               <th className="px-2 py-2">Hasta</th>
               <th className="px-2 py-2">Concepto</th>
@@ -3391,15 +2877,12 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
           </thead>
           <tbody className="divide-y divide-slate-100">
             {lista.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-6 text-slate-500">Todavía no hay traspasos. Usa el formulario de arriba para el primero.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-6 text-slate-500">Todavía no hay traspasos. Usa el formulario de arriba para el primero.</td></tr>
             )}
             {lista.map((m) => (
               <React.Fragment key={m.id}>
-              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : selec.includes(m.id) ? "bg-amber-100" : ""}`}>
-                <td className="pl-4 pr-1 py-2">
-                  <CasillaFila id={m.id} selec={selec} setSelec={setSelec} titulo="Marcar este traspaso" />
-                </td>
-                <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
+              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : ""}`}>
+                <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
                 <td className="px-2 py-2 max-w-36 truncate text-red-700 font-semibold">{cuentaNombre(m.cuentaId)}</td>
                 <td className="px-2 py-2 max-w-36 truncate text-emerald-700 font-semibold">→ {cuentaNombre(m.destinoId)}</td>
                 <td className="px-2 py-2 max-w-52 truncate text-slate-600">{m.concepto || "—"}</td>
@@ -3412,7 +2895,7 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
               </tr>
               {editId === m.id && (
                 <tr className="bg-amber-50">
-                  <td colSpan={8} className="px-4 py-3">
+                  <td colSpan={7} className="px-4 py-3">
                     <div className="rounded-lg border border-amber-300 bg-white p-3">
                       <div className="text-xs font-bold text-amber-800 mb-2">Editar traspaso</div>
                       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 items-end">
@@ -3467,7 +2950,7 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
 // ==================================================================
 // Panel de Taquilla
 // ==================================================================
-function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrarTaquilla, borrarTaquillasLote }) {
+function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrarTaquilla }) {
   const vacio = () => ({
     fecha: hoyISO(), concepto: "",
     cuentaId: cuentas.find((c) => c.tipo === "efectivo")?.id || cuentas[0]?.id || "",
@@ -3479,7 +2962,6 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
   });
   const [f, setF] = useState(vacio());
   const [editIdT, setEditIdT] = useState(null);
-  const [selec, setSelec] = useState([]);   // taquillas marcadas con la casilla
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -3510,11 +2992,6 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
   const lista = [...taquillas]
     .filter((t) => temporadaDe(t.fecha) === tempActiva)
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-
-  // ---------- acciones en bloque (casillas marcadas) ----------
-  const idsVisibles = lista.map((t) => t.id);
-  const marcados = selec.filter((id) => idsVisibles.includes(id));
-  const borrarSeleccion = () => { borrarTaquillasLote(marcados); setSelec([]); };
 
   const totales = lista.reduce((acc, t) => {
     const a5 = vendidas(t.e5desde, t.e5hasta), a10 = vendidas(t.e10desde, t.e10hasta),
@@ -3666,17 +3143,10 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <BarraSelec n={marcados.length} etiqueta="taquilla marcada" onLimpiar={() => setSelec([])}>
-          <BotonBorrarSelec n={marcados.length} texto="Borrar las taquillas marcadas"
-            pregunta="¿Borrar estas taquillas y sus ingresos?" onConfirmar={borrarSeleccion} />
-        </BarraSelec>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <th className="pl-4 pr-1 py-2 w-8">
-                <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
-              </th>
-              <th className="px-2 py-2">Fecha</th>
+              <th className="px-4 py-2">Fecha</th>
               <th className="px-2 py-2">Partido</th>
               <th className="px-2 py-2">Entradas 5 €</th>
               <th className="px-2 py-2">Entradas 10 €</th>
@@ -3690,7 +3160,7 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
           </thead>
           <tbody className="divide-y divide-slate-100">
             {lista.length === 0 && (
-              <tr><td colSpan={11} className="px-4 py-6 text-slate-500">Sin taquillas anotadas en la temporada {tempActiva}.</td></tr>
+              <tr><td colSpan={10} className="px-4 py-6 text-slate-500">Sin taquillas anotadas en la temporada {tempActiva}.</td></tr>
             )}
             {lista.map((t) => {
               const a5 = vendidas(t.e5desde, t.e5hasta);
@@ -3700,11 +3170,8 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
               const tEnt = a5 * num(t.precio5) + a10 * num(t.precio10) + aa * num(t.precioAnt);
               const tRifa = at * num(t.precioTira);
               return (
-                <tr key={t.id} className={selec.includes(t.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
-                  <td className="pl-4 pr-1 py-2">
-                    <CasillaFila id={t.id} selec={selec} setSelec={setSelec} titulo="Marcar esta taquilla" />
-                  </td>
-                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(t.fecha)}</td>
+                <tr key={t.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(t.fecha)}</td>
                   <td className="px-2 py-2 max-w-44 truncate font-semibold">{t.concepto}</td>
                   <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a5 > 0 ? `${t.e5desde}–${t.e5hasta} (${a5})` : "—"}</td>
                   <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a10 > 0 ? `${t.e10desde}–${t.e10hasta} (${a10})` : "—"}</td>
@@ -3724,7 +3191,7 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
           {lista.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
-                <td className="px-4 py-2" colSpan={3}>Total temporada</td>
+                <td className="px-4 py-2" colSpan={2}>Total temporada</td>
                 <td className="px-2 py-2 tabular-nums">{totales.n5}</td>
                 <td className="px-2 py-2 tabular-nums">{totales.n10}</td>
                 <td className="px-2 py-2 tabular-nums">{totales.nAnt}</td>
@@ -3745,11 +3212,10 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
 // ==================================================================
 // Panel de Caja
 // ==================================================================
-function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapido, editarMov, borrarMov, borrarMovsLote, pedirConfirmacion,
+function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapido, editarMov, borrarMov, pedirConfirmacion,
   editId, editForm, setEditForm, guardarEdicion, cancelarEdicion }) {
   const cajas = cuentas.filter((c) => c.tipo === "efectivo");
   const [cajaId, setCajaId] = useState(cajas[0]?.id || "");
-  const [selec, setSelec] = useState([]);   // movimientos marcados con la casilla
   const [contado, setContado] = useState("");
   const [rapido, setRapido] = useState({ fecha: hoyISO(), tipo: "ingreso", categoria: "", empresa: "", concepto: "", importe: "" });
 
@@ -3778,11 +3244,6 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
 
   const saldoCaja = idCaja ? saldos[idCaja] || 0 : 0;
   const dif = contado !== "" ? num(contado) - saldoCaja : null;
-
-  // ---------- acciones en bloque (casillas marcadas) ----------
-  const idsVisibles = filas.map(({ m }) => m.id);
-  const marcados = selec.filter((id) => idsVisibles.includes(id));
-  const borrarSeleccion = () => { borrarMovsLote(marcados); setSelec([]); };
 
   const anotar = () => {
     const imp = num(rapido.importe);
@@ -3873,20 +3334,11 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
         <p className="text-xs text-slate-500 mt-2">Para llevar efectivo al banco (o traerlo), usa un «Traspaso entre cuentas» en la pestaña Movimientos.</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200">
-        <BarraSelec n={marcados.length} etiqueta="movimiento marcado" onLimpiar={() => setSelec([])}>
-          <BotonBorrarSelec n={marcados.length} texto="Borrar los movimientos marcados"
-            pregunta="¿Borrar estos movimientos de caja?" onConfirmar={borrarSeleccion} />
-          <span className="text-xs text-slate-500">Las líneas-resumen de socios, cantera o publicidad no se borran desde aquí.</span>
-        </BarraSelec>
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <th className="pl-4 pr-1 py-2 w-8">
-                <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
-              </th>
-              <th className="px-2 py-2">Fecha</th>
+              <th className="px-4 py-2">Fecha</th>
               <th className="px-2 py-2">Empresa / persona</th>
               <th className="px-2 py-2">Concepto</th>
               <th className="px-2 py-2">Categoría</th>
@@ -3898,15 +3350,12 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filas.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-6 text-slate-500">La caja no tiene movimientos todavía.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-slate-500">La caja no tiene movimientos todavía.</td></tr>
             )}
             {filas.map(({ m, delta, saldo }) => (
               <React.Fragment key={m.id}>
-              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : selec.includes(m.id) ? "bg-amber-100" : ""}`}>
-                <td className="pl-4 pr-1 py-2">
-                  <CasillaFila id={m.id} selec={selec} setSelec={setSelec} titulo="Marcar este movimiento" />
-                </td>
-                <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
+              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : ""}`}>
+                <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
                 <td className="px-2 py-2 max-w-40 truncate font-medium text-slate-700">{m.empresa || <span className="text-slate-400">—</span>}</td>
                 <td className="px-2 py-2 max-w-52 truncate">{m.concepto || m.categoria}
                   {m.tipo === "traspaso" && <span className="text-xs text-amber-700 ml-1">(traspaso {m.destinoId === caja.id ? "desde" : "a"} {cuentaNombre(m.destinoId === caja.id ? m.cuentaId : m.destinoId)})</span>}
@@ -3922,13 +3371,12 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
               </tr>
               {editId === m.id && (
                 <EditorMovInline form={editForm} setForm={setEditForm} cuentas={cuentas}
-                  categorias={categorias} onGuardar={guardarEdicion} onCancelar={cancelarEdicion} colSpan={9} />
+                  categorias={categorias} onGuardar={guardarEdicion} onCancelar={cancelarEdicion} colSpan={8} />
               )}
               </React.Fragment>
             ))}
           </tbody>
         </table>
-        </div>
       </div>
     </>
   );
@@ -3937,7 +3385,7 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
 // ==================================================================
 // Panel de Cartelería / Publicidad con IVA
 // ==================================================================
-function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrarCartel, borrarCartelesLote, cuentaNombre }) {
+function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrarCartel, cuentaNombre }) {
   const vacio = () => ({
     fecha: hoyISO(), cliente: "", tipo: "campo", concepto: "",
     base: "", iva: "21", estado: "cobrado",
@@ -3948,7 +3396,6 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
   const [editIdC, setEditIdC] = useState(null);
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroEstado, setFiltroEstado] = useState("todos");
-  const [selec, setSelec] = useState([]);   // contratos marcados con la casilla
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -3993,13 +3440,6 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
       cobrado: cs.filter((c) => c.estado === "cobrado").reduce((s, c) => s + c.total, 0),
     };
   }).filter((r) => r.n > 0);
-
-  // ---------- acciones en bloque (casillas marcadas) ----------
-  const idsVisibles = lista.map((c) => c.id);
-  const marcados = selec.filter((id) => idsVisibles.includes(id));
-  const totalMarcado = lista.filter((c) => marcados.includes(c.id)).reduce((t, c) => t + num(c.total), 0);
-
-  const borrarSeleccion = () => { borrarCartelesLote(marcados); setSelec([]); };
 
   return (
     <>
@@ -4135,21 +3575,11 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
             <option value="pendiente">Pendientes</option>
           </select>
         </div>
-
-        <BarraSelec n={marcados.length} etiqueta="contrato marcado" onLimpiar={() => setSelec([])}>
-          <span className="tabular-nums text-slate-600">Total marcado: <b>{eur(totalMarcado)}</b></span>
-          <BotonBorrarSelec n={marcados.length} texto="Borrar los contratos marcados"
-            pregunta="¿Borrar estos contratos de publicidad?" onConfirmar={borrarSeleccion} />
-        </BarraSelec>
-
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="pl-4 pr-1 py-2 w-8">
-                  <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
-                </th>
-                <th className="px-2 py-2">Fecha</th>
+                <th className="px-4 py-2">Fecha</th>
                 <th className="px-2 py-2">Anunciante</th>
                 <th className="px-2 py-2">Tipo</th>
                 <th className="px-2 py-2 text-right">Base</th>
@@ -4162,14 +3592,11 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
             </thead>
             <tbody className="divide-y divide-slate-100">
               {lista.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-6 text-slate-500">Sin publicidad anotada en la temporada {tempActiva}.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-6 text-slate-500">Sin publicidad anotada en la temporada {tempActiva}.</td></tr>
               )}
               {lista.map((c) => (
-                <tr key={c.id} className={selec.includes(c.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
-                  <td className="pl-4 pr-1 py-2">
-                    <CasillaFila id={c.id} selec={selec} setSelec={setSelec} titulo="Marcar este contrato" />
-                  </td>
-                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(c.fecha)}</td>
+                <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(c.fecha)}</td>
                   <td className="px-2 py-2 max-w-40 truncate font-semibold">{c.cliente}
                     {c.concepto && <span className="block text-xs font-normal text-slate-400 truncate">{c.concepto}</span>}
                   </td>
@@ -4195,7 +3622,7 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
             {lista.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
-                  <td className="px-4 py-2" colSpan={4}>Total mostrado</td>
+                  <td className="px-4 py-2" colSpan={3}>Total mostrado</td>
                   <td className="px-2 py-2 text-right tabular-nums">{eur(lista.reduce((s, c) => s + c.base, 0))}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{eur(lista.reduce((s, c) => s + c.cuotaIva, 0))}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{eur(lista.reduce((s, c) => s + c.total, 0))}</td>
@@ -4281,300 +3708,10 @@ function PanelCuentas({ data, persist, saldos, setAviso }) {
 }
 
 // ==================================================================
-// Cobros del mes (hoja mensual de socios)
-// ------------------------------------------------------------------
-// Eliges un mes de la temporada, marcas quién paga y cómo (efectivo,
-// tarjeta, Bizum, transferencia, cheque) y a qué cuenta entra. Arriba,
-// los pagados; abajo, los pendientes. La contabilidad recibe un único
-// movimiento por mes y cuenta, que se actualiza solo.
-// ==================================================================
-function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
-  registrarCobroSocio, borrarCobroSocio, borrarCobrosLote, registrarCobrosLote, cuentaNombre, setAviso }) {
-
-  // Meses de la temporada activa (julio → junio)
-  const mesesTemp = useMemo(() => {
-    const m = /^(\d{4})\/(\d{4})$/.exec(tempActiva);
-    if (!m) { const k = hoyISO().slice(0, 7); return [k]; }
-    const y1 = Number(m[1]);
-    const out = [];
-    for (let i = 6; i < 12; i++) out.push(`${y1}-${String(i + 1).padStart(2, "0")}`);       // jul–dic
-    for (let i = 0; i < 6; i++) out.push(`${y1 + 1}-${String(i + 1).padStart(2, "0")}`);     // ene–jun
-    return out;
-  }, [tempActiva]);
-
-  const mesHoy = hoyISO().slice(0, 7);
-  const [mesSel, setMesSel] = useState(mesesTemp.includes(mesHoy) ? mesHoy : mesesTemp[0]);
-  useEffect(() => { setMesSel(mesesTemp.includes(mesHoy) ? mesHoy : mesesTemp[0]); }, [tempActiva]); // eslint-disable-line
-
-  // Fecha con la que se anota un cobro de este mes (hoy si es el mes en curso; si no, día 1)
-  const fechaDelMes = () => (mesSel === mesHoy ? hoyISO() : `${mesSel}-01`);
-
-  const [cuentaSel, setCuentaSel] = useState(cuentas[0]?.id || "");
-  const [formaSel, setFormaSel] = useState("Efectivo");
-  const [busca, setBusca] = useState("");
-  const [selPag, setSelPag] = useState([]);   // cobros marcados (tabla de pagados)
-  const [selPen, setSelPen] = useState([]);   // socios marcados (tabla de pendientes)
-
-  const activos = (socios || []).filter((s) => s.activo !== false);
-
-  // Cobros de socios registrados en el mes elegido
-  const cobrosMes = useMemo(
-    () => cobrosSocios.filter((c) => (c.mes || (c.fecha || "").slice(0, 7)) === mesSel),
-    [cobrosSocios, mesSel]);
-
-  const socioDe = useCallback((id) => (socios || []).find((s) => s.id === id), [socios]);
-
-  // Pendientes de la temporada: socios cuya cuota no está cubierta todavía
-  const pendientes = useMemo(() => activos
-    .filter((s) => { const cuota = num(s.cuota); return cuota > 0 && pagadoPor("socio", s.id) < cuota; })
-    .filter((s) => !busca || `${s.numero} ${nombreCompleto(s)} ${s.categoria || ""}`.toLowerCase().includes(busca.toLowerCase()))
-    .sort((a, b) => (ORDEN_SERIE[serieDeCategoria(a.categoria)] - ORDEN_SERIE[serieDeCategoria(b.categoria)]) || (a.numero || 0) - (b.numero || 0)),
-  [activos, pagadoPor, busca]);
-
-  // Totales del mes por cuenta (lo que va al resumen contable) y por forma de pago
-  const totalesMes = useMemo(() => {
-    const porCuenta = {}, porForma = {};
-    let total = 0;
-    for (const c of cobrosMes) {
-      const imp = num(c.importe);
-      total += imp;
-      porCuenta[c.cuentaId] = (porCuenta[c.cuentaId] || 0) + imp;
-      const f = c.forma || "Otro";
-      porForma[f] = (porForma[f] || 0) + imp;
-    }
-    return { total: r2(total), porCuenta, porForma };
-  }, [cobrosMes]);
-
-  const cobrarSocio = (s) => {
-    const pendiente = Math.max(0, num(s.cuota) - pagadoPor("socio", s.id));
-    const ok = registrarCobroSocio({
-      socioId: s.id, fecha: fechaDelMes(),
-      importe: pendiente > 0 ? pendiente : num(s.cuota),
-      cuentaId: cuentaSel, forma: formaSel,
-    });
-    if (ok === false) return;
-  };
-
-  // ---------- acciones en bloque ----------
-  const idsCobrosMes = cobrosMes.map((c) => c.id);
-  const marcadosPag = selPag.filter((id) => idsCobrosMes.includes(id));
-  const idsPendientes = pendientes.map((s) => s.id);
-  const marcadosPen = selPen.filter((id) => idsPendientes.includes(id));
-
-  const borrarCobrosSeleccion = () => {
-    borrarCobrosLote(marcadosPag);
-    setSelPag([]);
-  };
-
-  // Cobra de golpe a todos los socios marcados, con la cuenta y forma de arriba
-  const cobrarSeleccion = () => {
-    const lista = pendientes
-      .filter((s) => marcadosPen.includes(s.id))
-      .map((s) => {
-        const pendiente = Math.max(0, num(s.cuota) - pagadoPor("socio", s.id));
-        return { socioId: s.id, fecha: fechaDelMes(), importe: pendiente > 0 ? pendiente : num(s.cuota), cuentaId: cuentaSel, forma: formaSel };
-      });
-    registrarCobrosLote(lista);
-    setSelPen([]);
-  };
-
-  const totalMarcadoPen = pendientes
-    .filter((s) => marcadosPen.includes(s.id))
-    .reduce((t, s) => t + Math.max(0, num(s.cuota) - pagadoPor("socio", s.id)), 0);
-
-  const inp = "border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white";
-
-  return (
-    <>
-      <div className="flex items-center gap-3 flex-wrap">
-        <h2 className="font-bold text-lg mr-auto">Cobros del mes</h2>
-        <span className="text-sm text-slate-500">Temporada {tempActiva}</span>
-      </div>
-
-      {/* Barra de selección: mes + cómo se cobra por defecto */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
-        <label className="text-xs font-semibold text-slate-600">Mes
-          <select value={mesSel} onChange={(e) => setMesSel(e.target.value)} className={inp + " block mt-1"}>
-            {mesesTemp.map((k) => <option key={k} value={k}>{mesLabel(k)}</option>)}
-          </select>
-        </label>
-        <label className="text-xs font-semibold text-slate-600">Cobrar por defecto en
-          <select value={cuentaSel} onChange={(e) => setCuentaSel(e.target.value)} className={inp + " block mt-1"}>
-            {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
-        </label>
-        <label className="text-xs font-semibold text-slate-600">Forma
-          <select value={formaSel} onChange={(e) => setFormaSel(e.target.value)} className={inp + " block mt-1"}>
-            {FORMAS.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </label>
-        <input placeholder="Buscar socio…" value={busca} onChange={(e) => setBusca(e.target.value)} className={inp + " ml-auto w-44"} />
-      </div>
-
-      {/* Resumen del mes: total, por cuenta (caja/banco) y por forma de pago */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">Cobrado este mes</div>
-          <div className="text-2xl font-bold tabular-nums mt-1 text-emerald-700">{eur(totalesMes.total)}</div>
-          <div className="text-xs text-slate-500 mt-1">{cobrosMes.length} cobro{cobrosMes.length === 1 ? "" : "s"} de socio</div>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">En la contabilidad (por cuenta)</div>
-          {Object.keys(totalesMes.porCuenta).length === 0
-            ? <div className="text-sm text-slate-400">—</div>
-            : Object.entries(totalesMes.porCuenta).map(([cid, v]) => (
-              <div key={cid} className="flex justify-between text-sm py-0.5">
-                <span className="text-slate-600">{cuentaNombre(cid)}{cuentaEsEfectivo(cuentas, cid) ? " (efectivo)" : " (banco)"}</span>
-                <span className="tabular-nums font-semibold text-emerald-700">{eur(v)}</span>
-              </div>
-            ))}
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">Por forma de pago</div>
-          {Object.keys(totalesMes.porForma).length === 0
-            ? <div className="text-sm text-slate-400">—</div>
-            : Object.entries(totalesMes.porForma).map(([f, v]) => (
-              <div key={f} className="flex justify-between text-sm py-0.5">
-                <span className="text-slate-600">{f}</span>
-                <span className="tabular-nums font-semibold">{eur(v)}</span>
-              </div>
-            ))}
-        </div>
-      </div>
-      <p className="text-xs text-slate-500 -mt-1">El resumen de arriba ya está reflejado en la contabilidad como un único movimiento por mes y cuenta (lo verás en «Movimientos» como «Cuotas de socios — {mesLabel(mesSel)}»). Se actualiza solo cada vez que registras o quitas un cobro.</p>
-
-      {/* PAGADOS este mes */}
-      <div className="bg-white rounded-xl border border-slate-200">
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          <h3 className="font-bold mr-auto">Pagados en {mesLabel(mesSel)} ({cobrosMes.length})</h3>
-          <span className="text-xs text-slate-500">Marca las casillas para quitar varios cobros de una vez</span>
-        </div>
-
-        <BarraSelec n={marcadosPag.length} etiqueta="cobro marcado" onLimpiar={() => setSelPag([])}>
-          <BotonBorrarSelec n={marcadosPag.length} texto="Borrar los cobros marcados"
-            pregunta="¿Borrar estos cobros?" onConfirmar={borrarCobrosSeleccion} />
-          <span className="text-xs text-slate-500">Los socios vuelven a la lista de pendientes y el resumen del mes se recalcula solo.</span>
-        </BarraSelec>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="pl-4 pr-1 py-2 w-8">
-                  <CasillaTodo ids={idsCobrosMes} selec={selPag} setSelec={setSelPag} />
-                </th>
-                <th className="px-2 py-2">Nº</th>
-                <th className="px-2 py-2">Apellidos, nombre</th>
-                <th className="px-2 py-2">Categoría</th>
-                <th className="px-2 py-2 text-right">Importe</th>
-                <th className="px-2 py-2">Forma</th>
-                <th className="px-2 py-2">Cuenta</th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {cobrosMes.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-slate-500">Aún no hay cobros anotados en {mesLabel(mesSel)}. Marca abajo a los socios que van pagando.</td></tr>
-              )}
-              {cobrosMes
-                .slice()
-                .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
-                .map((c) => {
-                  const s = socioDe(c.socioId);
-                  return (
-                    <tr key={c.id} className={selPag.includes(c.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
-                      <td className="pl-4 pr-1 py-2">
-                        <CasillaFila id={c.id} selec={selPag} setSelec={setSelPag} titulo="Marcar este cobro" />
-                      </td>
-                      <td className="px-2 py-2 tabular-nums font-semibold">{s ? numeroSocio(s) : "—"}</td>
-                      <td className="px-2 py-2">{s ? apellidosNombre(s) : <span className="text-slate-400">socio borrado</span>}</td>
-                      <td className="px-2 py-2 text-slate-600">{s?.categoria || "—"}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-emerald-700 font-semibold">{eur(c.importe)}</td>
-                      <td className="px-2 py-2">{c.forma}</td>
-                      <td className="px-2 py-2 text-slate-600">{cuentaNombre(c.cuentaId)}</td>
-                      <td className="px-2 py-2 text-right">
-                        <button onClick={() => borrarCobroSocio(c.id)} className="text-red-500 hover:underline text-xs font-semibold">Quitar</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* PENDIENTES de la temporada */}
-      <div className="bg-white rounded-xl border border-slate-200">
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-          <h3 className="font-bold mr-auto">Pendientes de pagar la temporada ({pendientes.length})</h3>
-          <span className="text-xs text-slate-500">Al pulsar «Cobrar» se anota con la cuenta y forma de arriba</span>
-        </div>
-
-        <BarraSelec n={marcadosPen.length} etiqueta="socio marcado" onLimpiar={() => setSelPen([])}>
-          <button onClick={cobrarSeleccion}
-            className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 rounded-lg px-3 py-1 text-xs font-semibold">
-            Cobrar los {marcadosPen.length} marcados ({eur(totalMarcadoPen)})
-          </button>
-          <span className="text-xs text-slate-500">Se anotan con fecha de {mesLabel(mesSel)}, en {cuentaNombre(cuentaSel)} y como {formaSel.toLowerCase()}.</span>
-        </BarraSelec>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="pl-4 pr-1 py-2 w-8">
-                  <CasillaTodo ids={idsPendientes} selec={selPen} setSelec={setSelPen} />
-                </th>
-                <th className="px-2 py-2">Nº</th>
-                <th className="px-2 py-2">Apellidos, nombre</th>
-                <th className="px-2 py-2">Categoría</th>
-                <th className="px-2 py-2 text-right">Cuota</th>
-                <th className="px-2 py-2 text-right">Pagado</th>
-                <th className="px-2 py-2 text-right">Debe</th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {pendientes.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-emerald-700 font-semibold">¡Todos los socios al día en esta temporada!</td></tr>
-              )}
-              {pendientes.map((s) => {
-                const pagado = pagadoPor("socio", s.id);
-                const debe = Math.max(0, num(s.cuota) - pagado);
-                return (
-                  <tr key={s.id} className={selPen.includes(s.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
-                    <td className="pl-4 pr-1 py-2">
-                      <CasillaFila id={s.id} selec={selPen} setSelec={setSelPen} titulo="Marcar este socio para cobrarlo" />
-                    </td>
-                    <td className="px-2 py-2 tabular-nums font-semibold">{numeroSocio(s)}</td>
-                    <td className="px-2 py-2">{apellidosNombre(s)}</td>
-                    <td className="px-2 py-2 text-slate-600">{s.categoria || "—"}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{eur(s.cuota)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{eur(pagado)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums font-semibold text-red-600">{eur(debe)}</td>
-                    <td className="px-2 py-2 text-right">
-                      <button onClick={() => cobrarSocio(s)} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 rounded-lg px-3 py-1 text-xs font-semibold">
-                        Cobrar {eur(debe)}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ==================================================================
 // Panel compartido de cuotas: Socios y Cantera
 // ==================================================================
 function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, tempActiva,
-  pagadoPor, pagosDe, cuentaNombre, registrarPago, borrarPago, borrarPagosLote, onGuardar, setAviso }) {
+  pagadoPor, pagosDe, cuentaNombre, registrarPago, borrarPago, onGuardar, setAviso }) {
 
   const esSocio = modo === "socio";
   const refTipo = esSocio ? "socio" : "jugador";
@@ -4600,7 +3737,6 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
   const [busca, setBusca] = useState("");
   const [abierto, setAbierto] = useState(null);
   const [pago, setPago] = useState(null);
-  const [selec, setSelec] = useState([]);   // fichas marcadas con la casilla
 
   useEffect(() => { if (!editandoId && esSocio) setAlta((a) => ({ ...a, numero: sigNumeroDe(a.categoria) })); }, [personas.length]); // eslint-disable-line
 
@@ -4626,7 +3762,6 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
       return setAviso(`El nº de socio ${alta.numero}${et ? ` ${et}` : ""} ya está asignado.`);
     }
     if (!esSocio && !alta.equipo) return setAviso("Elige el equipo.");
-    const prev = editandoId ? personas.find((p) => p.id === editandoId) : null;
     const persona = {
       id: editandoId || uid(esSocio ? "s" : "j"),
       nombre: alta.nombre.trim(),
@@ -4634,22 +3769,13 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
       cuota: num(alta.cuota),
       ...(esSocio
         ? { numero: Number(alta.numero), categoria: alta.categoria || "", telefono: (alta.telefono || "").trim(),
-            dni: (alta.dni || "").trim().toUpperCase(), localidad: (alta.localidad || "").trim(), genero: alta.genero || "",
-            // al editar se conserva el estado; un alta nueva siempre es activo
-            activo: prev ? (prev.activo !== false) : true }
+            dni: (alta.dni || "").trim().toUpperCase(), localidad: (alta.localidad || "").trim(), genero: alta.genero || "" }
         : { equipo: alta.equipo }),
     };
     onGuardar(editandoId ? personas.map((p) => (p.id === editandoId ? persona : p)) : [...personas, persona]);
     setAlta(vacio());
     setEditandoId(null);
     setAviso(editandoId ? "Ficha actualizada." : (esSocio ? `Socio nº ${numeroSocio(persona)} dado de alta.` : "Jugador dado de alta."));
-  };
-
-  // Reactivar un socio de baja: vuelve a activo con el siguiente número libre de su serie
-  const reactivarPersona = (p) => {
-    const n = sigNumeroDe(p.categoria);
-    onGuardar(personas.map((x) => (x.id === p.id ? { ...x, activo: true, numero: n } : x)));
-    setAviso(`Socio reactivado con el nº ${n}${ETIQUETA_SERIE[serieDeCategoria(p.categoria)] ? ` ${ETIQUETA_SERIE[serieDeCategoria(p.categoria)]}` : ""}.`);
   };
 
   const editarPersona = (p) => {
@@ -4677,43 +3803,34 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
 
   const lista = personas
     .filter((p) => {
-      // Bajas (socios sin número tras renumerar): ocultas salvo que se pida verlas
-      if (esSocio) {
-        const esBaja = p.activo === false;
-        if (filtroEstado === "baja") { if (!esBaja) return false; }
-        else if (esBaja) return false;
-      }
       if (!esSocio && filtroEq !== "todos" && p.equipo !== filtroEq) return false;
       if (esSocio && filtroCat !== "todas" && (p.categoria || "") !== filtroCat) return false;
       if (esSocio && filtroGen !== "todos" && (p.genero || "Sin indicar") !== filtroGen) return false;
       if (esSocio && filtroForma !== "todas" && !pagosDe(refTipo, p.id).some((m) => (m.forma || "Otro") === filtroForma)) return false;
       if (esSocio && filtroNum.trim() !== "" && Number(p.numero) !== Number(filtroNum)) return false;
-      if (filtroEstado !== "todos" && filtroEstado !== "baja" && estadoDe(p) !== filtroEstado) return false;
+      if (filtroEstado !== "todos" && estadoDe(p) !== filtroEstado) return false;
       if (busca && !`${p.nombre} ${p.apellidos || ""} ${esSocio ? `${p.numero} ${p.categoria || ""} ${p.dni || ""} ${p.localidad || ""}` : p.equipo}`.toLowerCase().includes(busca.toLowerCase())) return false;
       return true;
     })
     .sort((a, b) => esSocio
-      ? (ORDEN_SERIE[serieDeCategoria(a.categoria)] - ORDEN_SERIE[serieDeCategoria(b.categoria)] || (a.numero || 0) - (b.numero || 0))
+      ? (ORDEN_SERIE[serieDeCategoria(a.categoria)] - ORDEN_SERIE[serieDeCategoria(b.categoria)] || a.numero - b.numero)
       : (a.equipo === b.equipo ? apellidosNombre(a).localeCompare(apellidosNombre(b)) : a.equipo.localeCompare(b.equipo)));
-
-  // Para los cálculos de socios se excluyen las bajas (activo:false); en cantera se usan todos.
-  const personasContables = esSocio ? personas.filter((p) => p.activo !== false) : personas;
 
   const resumen = useMemo(() => {
     let cuotas = 0, cobrado = 0;
-    for (const p of personasContables) {
+    for (const p of personas) {
       cuotas += num(p.cuota);
       cobrado += pagadoPor(refTipo, p.id);
     }
-    return { n: personasContables.length, cuotas, cobrado, pendiente: Math.max(0, cuotas - cobrado) };
-  }, [personasContables, pagadoPor, refTipo]);
+    return { n: personas.length, cuotas, cobrado, pendiente: Math.max(0, cuotas - cobrado) };
+  }, [personas, pagadoPor, refTipo]);
 
   const resumenGrupos = useMemo(() => {
     if (esSocio) {
       if (!catSocios) return [];
-      const nombres = [...new Set([...catSocios.map((c) => c.nombre), ...personasContables.map((p) => p.categoria || "Sin categoría")])];
+      const nombres = [...new Set([...catSocios.map((c) => c.nombre), ...personas.map((p) => p.categoria || "Sin categoría")])];
       return nombres.map((cat) => {
-        const ps = personasContables.filter((p) => (p.categoria || "Sin categoría") === cat);
+        const ps = personas.filter((p) => (p.categoria || "Sin categoría") === cat);
         const cuotas = ps.reduce((s, p) => s + num(p.cuota), 0);
         const cobrado = ps.reduce((s, p) => s + pagadoPor(refTipo, p.id), 0);
         return { grupo: cat, n: ps.length, cuotas, cobrado, pendiente: Math.max(0, cuotas - cobrado) };
@@ -4726,7 +3843,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
       const cobrado = js.reduce((s, p) => s + pagadoPor(refTipo, p.id), 0);
       return { grupo: eq, n: js.length, cuotas, cobrado, pendiente: Math.max(0, cuotas - cobrado) };
     }).filter((r) => r.n > 0);
-  }, [esSocio, catSocios, equipos, personasContables, pagadoPor, refTipo]);
+  }, [esSocio, catSocios, equipos, personas, pagadoPor, refTipo]);
 
   // Control de socios masculinos y femeninos: cuántos hay y cuántos están cobrados
   const resumenGenero = useMemo(() => {
@@ -4740,7 +3857,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
       return "pendiente";
     };
     return ["Masculino", "Femenino", "Sin indicar"].map((gen) => {
-      const ps = personasContables.filter((p) => (p.genero || "Sin indicar") === gen);
+      const ps = personas.filter((p) => (p.genero || "Sin indicar") === gen);
       let cobrados = 0, parciales = 0, pendientes = 0, importe = 0;
       for (const p of ps) {
         const e = estado(p);
@@ -4751,14 +3868,14 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
       }
       return { gen, n: ps.length, cobrados, parciales, pendientes, importe: r2(importe) };
     }).filter((r) => r.n > 0);
-  }, [esSocio, personasContables, pagadoPor, refTipo]);
+  }, [esSocio, personas, pagadoPor, refTipo]);
 
   // Control por forma de pago: cuántos socios pagan en efectivo, tarjeta,
   // transferencia, cheque, Bizum… y cuánto se ha cobrado por cada vía.
   const resumenFormas = useMemo(() => {
     if (!esSocio) return [];
     const acc = {};
-    for (const p of personasContables) {
+    for (const p of personas) {
       const yaContado = {};
       for (const m of pagosDe(refTipo, p.id)) {
         const f = m.forma || "Otro";
@@ -4772,7 +3889,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
     return Object.values(acc)
       .map((r) => ({ ...r, importe: r2(r.importe) }))
       .sort((a, b) => orden(a.forma) - orden(b.forma));
-  }, [esSocio, personasContables, pagosDe, refTipo]);
+  }, [esSocio, personas, pagosDe, refTipo]);
 
   const abrirPago = (p) => {
     const pendiente = Math.max(0, num(p.cuota) - pagadoPor(refTipo, p.id));
@@ -4791,31 +3908,6 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
     setPago(null);
   };
 
-  // ---------- acciones en bloque (casillas marcadas) ----------
-  const idsVisibles = lista.map((p) => p.id);
-  // Solo cuentan los marcados que siguen viéndose con los filtros actuales
-  const marcados = selec.filter((id) => idsVisibles.includes(id));
-  const marcadosPers = lista.filter((p) => marcados.includes(p.id));
-  const pagosMarcados = marcadosPers.flatMap((p) => pagosDe(refTipo, p.id).map((m) => m.id));
-
-  const seleccionarPagados = () => {
-    const ids = lista.filter((p) => estadoDe(p) === "pagado").map((p) => p.id);
-    if (ids.length === 0) return setAviso(`No hay ${esSocio ? "socios" : "jugadores"} con la cuota pagada en la lista que estás viendo.`);
-    setSelec(ids);
-  };
-
-  const borrarPagosSeleccion = () => {
-    if (pagosMarcados.length === 0) return setAviso("Los marcados no tienen ningún pago anotado en esta temporada.");
-    borrarPagosLote(pagosMarcados);
-    setSelec([]);
-  };
-
-  const borrarFichasSeleccion = () => {
-    onGuardar(personas.filter((p) => !marcados.includes(p.id)));
-    setAviso(`${marcados.length} ficha${marcados.length === 1 ? "" : "s"} eliminada${marcados.length === 1 ? "" : "s"}. Los pagos anotados no se han tocado.`);
-    setSelec([]);
-  };
-
   const pillEstado = (e) =>
     e === "pagado" ? ["Pagado", "bg-emerald-100 text-emerald-800"]
     : e === "parcial" ? ["Parcial", "bg-amber-100 text-amber-800"]
@@ -4828,18 +3920,6 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
         <h2 className="font-bold text-lg mr-auto">{titulo}</h2>
         <span className="text-sm text-slate-500">Cuotas de la temporada {tempActiva} (cámbiala en la cabecera)</span>
       </div>
-
-      {esSocio && (
-        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-900">
-          Aquí gestionas las <span className="font-semibold">fichas</span> de los socios (altas, datos y cuota). Para ir marcando quién paga cada mes, usa la subpestaña <span className="font-semibold">«Cobros del mes»</span>: allí verás pagados y pendientes, y cada mes se refleja en la contabilidad como un único movimiento por caja y por banco.
-        </div>
-      )}
-
-      {!esSocio && (
-        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-900">
-          Marca los pagos de cada jugador con el botón <span className="font-semibold">«+ Pago»</span>. En la contabilidad no aparece un apunte por jugador: cada mes se agrupa en <span className="font-semibold">un solo movimiento por equipo y cuenta</span> (efectivo o banco), para que la pestaña Movimientos quede limpia.
-        </div>
-      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
@@ -5060,7 +4140,6 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
             <option value="pagado">Pagado</option>
             <option value="parcial">Parcial</option>
             <option value="pendiente">Pendiente</option>
-            {esSocio && <option value="baja">Bajas (sin número)</option>}
           </select>
           {esSocio && (
             <div className="relative">
@@ -5075,34 +4154,12 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
           )}
           <input placeholder="Buscar…" value={busca} onChange={(e) => setBusca(e.target.value)}
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-36" />
-          <button onClick={seleccionarPagados} title={`Marca de golpe a todos los ${esSocio ? "socios" : "jugadores"} con la cuota pagada`}
-            className="border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-emerald-100">
-            ✓ Marcar pagados
-          </button>
         </div>
-
-        <BarraSelec n={marcados.length} etiqueta={esSocio ? "socio marcado" : "jugador marcado"} onLimpiar={() => setSelec([])}>
-          <BotonBorrarSelec n={pagosMarcados.length}
-            texto={`Borrar sus pagos (${pagosMarcados.length})`}
-            pregunta="¿Borrar los pagos marcados?"
-            onConfirmar={borrarPagosSeleccion} />
-          <BotonBorrarSelec n={marcados.length}
-            texto="Borrar las fichas"
-            pregunta={esSocio ? "¿Borrar las fichas de estos socios?" : "¿Borrar las fichas de estos jugadores?"}
-            onConfirmar={borrarFichasSeleccion} />
-          <span className="text-xs text-slate-500">
-            «Borrar sus pagos» quita lo cobrado de la temporada {tempActiva} y deja la ficha; «Borrar las fichas» elimina {esSocio ? "a los socios" : "a los jugadores"} de la lista.
-          </span>
-        </BarraSelec>
-
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="pl-4 pr-1 py-2 w-8">
-                  <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
-                </th>
-                <th className="px-2 py-2">{esSocio ? "Nº" : "Equipo"}</th>
+                <th className="px-4 py-2">{esSocio ? "Nº" : "Equipo"}</th>
                 <th className="px-2 py-2">Apellidos, nombre</th>
                 {esSocio && <th className="px-2 py-2">Categoría</th>}
                 {esSocio && <th className="px-2 py-2">DNI</th>}
@@ -5118,7 +4175,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
             </thead>
             <tbody className="divide-y divide-slate-100">
               {lista.length === 0 && (
-                <tr><td colSpan={esSocio ? 13 : 8} className="px-4 py-6 text-slate-500">
+                <tr><td colSpan={esSocio ? 12 : 7} className="px-4 py-6 text-slate-500">
                   {personas.length === 0 ? `Aún no hay ${esSocio ? "socios" : "jugadores"} dados de alta. Usa el formulario de arriba.` : "Nadie coincide con los filtros."}
                 </td></tr>
               )}
@@ -5132,10 +4189,8 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
                     p={p} esSocio={esSocio} pagado={pagado} pendiente={pendiente} txt={txt} cls={cls}
                     abiertoEste={abiertoEste} setAbierto={setAbierto}
                     abrirPago={abrirPago} editarPersona={editarPersona} quitarPersona={quitarPersona}
-                    reactivarPersona={reactivarPersona}
                     pagos={abiertoEste ? pagosDe(refTipo, p.id) : []}
                     cuentaNombre={cuentaNombre} borrarPago={borrarPago} tempActiva={tempActiva}
-                    selec={selec} setSelec={setSelec}
                   />
                 );
               })}
@@ -5188,30 +4243,23 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
   );
 }
 
-function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste, setAbierto, abrirPago, editarPersona, quitarPersona, reactivarPersona, pagos, cuentaNombre, borrarPago, tempActiva, selec, setSelec }) {
-  const cols = esSocio ? 13 : 8;
-  const esBaja = esSocio && p.activo === false;
+function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste, setAbierto, abrirPago, editarPersona, quitarPersona, pagos, cuentaNombre, borrarPago, tempActiva }) {
+  const cols = esSocio ? 12 : 7;
   // Socios de Empresa y de Honor se distinguen visualmente del resto:
   // fila con fondo de color y la categoría como etiqueta con icono.
   const catNorm = esSocio ? (p.categoria || "").toLowerCase() : "";
   const catEsp = catNorm.includes("empresa") ? "empresa" : catNorm.includes("honor") ? "honor" : null;
-  const marcada = (selec || []).includes(p.id);
-  const filaCls = marcada ? "bg-amber-100 hover:bg-amber-100 border-l-4 border-l-amber-500"
-    : esBaja ? "bg-slate-50 text-slate-400 hover:bg-slate-100"
-    : catEsp === "empresa" ? "bg-sky-50 hover:bg-sky-100 border-l-4 border-l-sky-400"
+  const filaCls =
+    catEsp === "empresa" ? "bg-sky-50 hover:bg-sky-100 border-l-4 border-l-sky-400"
     : catEsp === "honor" ? "bg-amber-50 hover:bg-amber-100 border-l-4 border-l-amber-400"
     : "hover:bg-slate-50";
   return (
     <>
       <tr className={filaCls}>
-        <td className="pl-4 pr-1 py-2">
-          <CasillaFila id={p.id} selec={selec} setSelec={setSelec}
-            titulo={esSocio ? "Marcar este socio" : "Marcar este jugador"} />
-        </td>
-        <td className="px-2 py-2 tabular-nums font-semibold whitespace-nowrap">
+        <td className="px-4 py-2 tabular-nums font-semibold whitespace-nowrap">
           {esSocio ? (
             <>
-              {esBaja ? <span className="text-slate-400">—</span> : p.numero}
+              {p.numero}
               {catEsp && (
                 <span className={`ml-1 text-[10px] font-bold uppercase tracking-wide ${catEsp === "empresa" ? "text-sky-700" : "text-amber-700"}`}>
                   {catEsp === "empresa" ? "Empresa" : "Honor"}
@@ -5241,19 +4289,10 @@ function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste
         <td className={`px-2 py-2 text-right tabular-nums font-semibold ${pendiente > 0 ? "text-red-600" : "text-slate-400"}`}>{eur(pendiente)}</td>
         <td className="px-2 py-2"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>{txt}</span></td>
         <td className="px-2 py-2 whitespace-nowrap text-right">
-          {esBaja ? (
-            <>
-              <button onClick={() => reactivarPersona(p)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-2.5 py-1 text-xs font-semibold mr-2">Reactivar</button>
-              <button onClick={() => quitarPersona(p)} className="text-red-600 hover:underline text-xs font-semibold">Borrar</button>
-            </>
-          ) : (
-            <>
-              <button onClick={() => abrirPago(p)} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 rounded-lg px-2.5 py-1 text-xs font-semibold mr-2">+ Pago</button>
-              <button onClick={() => setAbierto(abiertoEste ? null : p.id)} className="text-slate-500 hover:underline text-xs font-semibold mr-2">{abiertoEste ? "Ocultar" : "Pagos"}</button>
-              <button onClick={() => editarPersona(p)} className="text-amber-700 hover:underline text-xs font-semibold mr-2">Editar</button>
-              <button onClick={() => quitarPersona(p)} className="text-red-600 hover:underline text-xs font-semibold">Quitar</button>
-            </>
-          )}
+          <button onClick={() => abrirPago(p)} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 rounded-lg px-2.5 py-1 text-xs font-semibold mr-2">+ Pago</button>
+          <button onClick={() => setAbierto(abiertoEste ? null : p.id)} className="text-slate-500 hover:underline text-xs font-semibold mr-2">{abiertoEste ? "Ocultar" : "Pagos"}</button>
+          <button onClick={() => editarPersona(p)} className="text-amber-700 hover:underline text-xs font-semibold mr-2">Editar</button>
+          <button onClick={() => quitarPersona(p)} className="text-red-600 hover:underline text-xs font-semibold">Quitar</button>
         </td>
       </tr>
       {abiertoEste && (
