@@ -589,6 +589,64 @@ function migrar(old) {
 const emptyMov = () => ({ fecha: hoyISO(), tipo: "ingreso", categoria: "", empresa: "", concepto: "", importe: "", cuentaId: "", destinoId: "", forma: "Transferencia" });
 
 // ==================================================================
+// Casillas de selección para las tablas (marcar varias filas y borrarlas
+// de una vez). Se usan igual en Socios, Cantera, Publicidad, Caja,
+// Traspasos, Taquilla y Cobros del mes.
+// ==================================================================
+
+// Casilla de la cabecera: marca o desmarca TODAS las filas visibles.
+function CasillaTodo({ ids, selec, setSelec, titulo = "Marcar o desmarcar todo lo que se ve" }) {
+  const todas = ids.length > 0 && ids.every((id) => selec.includes(id));
+  return (
+    <input type="checkbox" className="accent-amber-500 w-4 h-4 align-middle cursor-pointer" title={titulo}
+      checked={todas}
+      onChange={(e) => setSelec(e.target.checked
+        ? [...new Set([...selec, ...ids])]
+        : selec.filter((id) => !ids.includes(id)))} />
+  );
+}
+
+// Casilla de una fila.
+function CasillaFila({ id, selec, setSelec, titulo = "Marcar esta fila" }) {
+  return (
+    <input type="checkbox" className="accent-amber-500 w-4 h-4 align-middle cursor-pointer" title={titulo}
+      checked={selec.includes(id)}
+      onChange={(e) => setSelec(e.target.checked ? [...selec, id] : selec.filter((x) => x !== id))} />
+  );
+}
+
+// Barra amarilla que aparece cuando hay filas marcadas, con los botones de acción.
+function BarraSelec({ n, etiqueta = "seleccionado", onLimpiar, children }) {
+  if (n === 0) return null;
+  return (
+    <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex flex-wrap items-center gap-3 text-sm">
+      <span className="font-semibold">{n} {etiqueta}{n === 1 ? "" : "s"}</span>
+      {children}
+      <button onClick={onLimpiar} className="text-slate-500 hover:underline ml-auto">Quitar selección</button>
+    </div>
+  );
+}
+
+// Botón de borrado con confirmación en dos pasos («Borrar» → «¿Seguro? Sí / No»),
+// para no borrar nada sin querer.
+function BotonBorrarSelec({ n, texto = "Borrar selección", pregunta, onConfirmar }) {
+  const [confirma, setConfirma] = useState(false);
+  useEffect(() => { if (n === 0) setConfirma(false); }, [n]);
+  if (confirma) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className="text-red-600 font-semibold">{pregunta ? `${pregunta} (${n})` : `¿Borrar ${n}?`}</span>
+        <button onClick={() => { onConfirmar(); setConfirma(false); }}
+          className="bg-red-600 hover:bg-red-700 text-white rounded px-2 py-0.5 text-xs font-semibold">Sí</button>
+        <button onClick={() => setConfirma(false)}
+          className="border border-slate-300 rounded px-2 py-0.5 text-xs">No</button>
+      </span>
+    );
+  }
+  return <button onClick={() => setConfirma(true)} className="text-red-600 hover:underline font-semibold">{texto}</button>;
+}
+
+// ==================================================================
 // Editor de un movimiento «en línea»: se muestra como una fila extra
 // justo debajo del movimiento que se está editando, en cualquier tabla
 // (Movimientos, Caja…), para no tener que subir hasta el formulario de
@@ -1259,18 +1317,24 @@ function TesoreriaClub() {
     setAviso("Datos grabados correctamente. (La aplicación también graba sola tras cada cambio.)");
   };
 
-  const borrarSeleccionados = () => {
-    // No se borran las líneas-resumen automáticas (socios, cantera y publicidad):
-    // se gestionan desde sus pestañas. Aquí se saltan.
-    const aBorrar = selec.filter((id) => !movs.find((m) => m.id === id)?.auto);
-    const protegidos = selec.length - aBorrar.length;
+  // Borra de una vez todos los movimientos marcados (se usa en Movimientos,
+  // Caja y Traspasos). Las líneas-resumen automáticas (socios, cantera y
+  // publicidad) no se tocan: se gestionan desde sus pestañas.
+  const borrarMovsLote = (ids) => {
+    const marcados = ids.filter((id) => movs.some((m) => m.id === id));
+    const aBorrar = marcados.filter((id) => !movs.find((m) => m.id === id)?.auto);
+    const protegidos = marcados.length - aBorrar.length;
     persist({ ...data, movimientos: movs.filter((m) => !aBorrar.includes(m.id)) });
-    setSelec([]);
-    setConfirmaBulk(false);
     setAviso(
       `${aBorrar.length} movimiento${aBorrar.length === 1 ? "" : "s"} borrado${aBorrar.length === 1 ? "" : "s"}.` +
       (protegidos > 0 ? ` (${protegidos} línea${protegidos === 1 ? "" : "s"}-resumen no se ${protegidos === 1 ? "ha" : "han"} tocado: se gestionan desde Socios, Cantera o Publicidad.)` : "")
     );
+  };
+
+  const borrarSeleccionados = () => {
+    borrarMovsLote(selec);
+    setSelec([]);
+    setConfirmaBulk(false);
   };
 
   const imprimirMovs = () => {
@@ -1394,6 +1458,29 @@ function TesoreriaClub() {
     setAviso("Cobro eliminado. El resumen mensual se ha vuelto a calcular.");
   };
 
+  // Borrar de golpe varios cobros de socio (casillas marcadas).
+  const borrarCobrosSocioLote = (ids) => {
+    if (!ids || ids.length === 0) return;
+    const set = new Set(ids);
+    const n = cobrosSocios.filter((c) => set.has(c.id)).length;
+    guardarCobros(cobrosSocios.filter((c) => !set.has(c.id)));
+    setAviso(`${n} pago${n === 1 ? "" : "s"} de socio borrado${n === 1 ? "" : "s"}. El resumen mensual se ha vuelto a calcular.`);
+  };
+
+  // Cobrar de golpe a varios socios marcados (pestaña «Cobros del mes»).
+  const registrarCobrosSocioLote = (lista) => {
+    const nuevos = (lista || [])
+      .filter((x) => num(x.importe) > 0 && x.cuentaId && x.fecha)
+      .map((x) => ({
+        id: uid("cs"), socioId: x.socioId, temporada: temporadaDe(x.fecha),
+        mes: mesKey(x.fecha), fecha: x.fecha, importe: num(x.importe),
+        cuentaId: x.cuentaId, forma: x.forma || "Efectivo",
+      }));
+    if (nuevos.length === 0) { setAviso("No hay nada que cobrar en la selección."); return; }
+    guardarCobros([...cobrosSocios, ...nuevos]);
+    setAviso(`${nuevos.length} socio${nuevos.length === 1 ? "" : "s"} cobrado${nuevos.length === 1 ? "" : "s"}. Se suman al resumen mensual de la contabilidad.`);
+  };
+
   // ---------- cobros de cantera (libro aparte + resumen mensual por equipo) ----------
   const guardarCobrosCant = (nuevos) => persist(regenerarResumenCantera({ ...data, cobrosCantera: nuevos }));
 
@@ -1414,6 +1501,15 @@ function TesoreriaClub() {
   const borrarCobroCantera = (id) => {
     guardarCobrosCant(cobrosCantera.filter((c) => c.id !== id));
     setAviso("Pago eliminado. El resumen mensual se ha vuelto a calcular.");
+  };
+
+  // Borrar de golpe varios pagos de cantera (casillas marcadas).
+  const borrarCobrosCanteraLote = (ids) => {
+    if (!ids || ids.length === 0) return;
+    const set = new Set(ids);
+    const n = cobrosCantera.filter((c) => set.has(c.id)).length;
+    guardarCobrosCant(cobrosCantera.filter((c) => !set.has(c.id)));
+    setAviso(`${n} pago${n === 1 ? "" : "s"} de cantera borrado${n === 1 ? "" : "s"}. El resumen mensual se ha vuelto a calcular.`);
   };
 
   // ---------- pagos de cuota (socios → su libro; cantera → su libro) ----------
@@ -1515,6 +1611,19 @@ function TesoreriaClub() {
     setAviso("Taquilla eliminada junto con sus ingresos.");
   };
 
+  // Borrar de golpe varias taquillas marcadas (con sus ingresos).
+  const borrarTaquillasLote = (ids) => {
+    if (!ids || ids.length === 0) return;
+    const set = new Set(ids);
+    const n = (data.taquillas || []).filter((t) => set.has(t.id)).length;
+    persist({
+      ...data,
+      taquillas: (data.taquillas || []).filter((t) => !set.has(t.id)),
+      movimientos: movs.filter((m) => !((m.refTipo === "taq-ent" || m.refTipo === "taq-rifa") && set.has(m.refId))),
+    });
+    setAviso(`${n} taquilla${n === 1 ? "" : "s"} borrada${n === 1 ? "" : "s"} junto con sus ingresos.`);
+  };
+
   // ---------- cartelería / publicidad ----------
   const guardarCartel = (c, idEdit) => {
     const base = num(c.base);
@@ -1549,6 +1658,18 @@ function TesoreriaClub() {
       cartelera: data.cartelera.filter((c) => c.id !== id),
     }));
     setAviso("Contrato de publicidad eliminado. El resumen mensual se ha vuelto a calcular.");
+  };
+
+  // Borrar de golpe varios contratos de publicidad (casillas marcadas).
+  const borrarCartelesLote = (ids) => {
+    if (!ids || ids.length === 0) return;
+    const set = new Set(ids);
+    const n = (data.cartelera || []).filter((c) => set.has(c.id)).length;
+    persist(regenerarResumenCartelera({
+      ...data,
+      cartelera: (data.cartelera || []).filter((c) => !set.has(c.id)),
+    }));
+    setAviso(`${n} contrato${n === 1 ? "" : "s"} de publicidad borrado${n === 1 ? "" : "s"}. El resumen mensual se ha vuelto a calcular.`);
   };
 
   // ---------- exportar / reiniciar ----------
@@ -2146,7 +2267,7 @@ function TesoreriaClub() {
               persist({ ...data, movimientos: esEdicion ? movs.map((m) => (m.id === mov.id ? mov : m)) : [...movs, mov] });
               setAviso(esEdicion ? "Traspaso actualizado." : `Traspaso grabado: ${eur(mov.importe)} de ${cuentaNombre(mov.cuentaId)} a ${cuentaNombre(mov.destinoId)}.`);
             }}
-            borrarMov={borrarMov}
+            borrarMov={borrarMov} borrarMovsLote={borrarMovsLote}
           />
         )}
 
@@ -2154,7 +2275,7 @@ function TesoreriaClub() {
         {tab === "taquilla" && (
           <PanelTaquilla
             taquillas={data.taquillas} cuentas={cuentas} tempActiva={tempActiva}
-            guardarTaquilla={guardarTaquilla} borrarTaquilla={borrarTaquilla} setAviso={setAviso}
+            guardarTaquilla={guardarTaquilla} borrarTaquilla={borrarTaquilla} borrarTaquillasLote={borrarTaquillasLote} setAviso={setAviso}
           />
         )}
 
@@ -2162,7 +2283,7 @@ function TesoreriaClub() {
         {tab === "publicidad" && (
           <PanelCarteleria
             cartelera={data.cartelera} cuentas={cuentas} tempActiva={tempActiva}
-            guardarCartel={guardarCartel} borrarCartel={borrarCartel} cuentaNombre={cuentaNombre}
+            guardarCartel={guardarCartel} borrarCartel={borrarCartel} borrarCartelesLote={borrarCartelesLote} cuentaNombre={cuentaNombre}
           />
         )}
 
@@ -2170,7 +2291,7 @@ function TesoreriaClub() {
         {tab === "caja" && (
           <PanelCaja
             cuentas={cuentas} movs={movs} saldos={saldos} cuentaNombre={cuentaNombre}
-            categorias={data.categorias} anotarRapido={anotarRapido} editarMov={editarMov} borrarMov={borrarMov}
+            categorias={data.categorias} anotarRapido={anotarRapido} editarMov={editarMov} borrarMov={borrarMov} borrarMovsLote={borrarMovsLote}
             pedirConfirmacion={pedirConfirmacion}
             editId={editId} editForm={editForm} setEditForm={setEditForm}
             guardarEdicion={guardarEdicion} cancelarEdicion={cancelarEdicion}
@@ -2202,7 +2323,7 @@ function TesoreriaClub() {
                 personas={data.socios} equipos={null} catSocios={data.catSocios} cuentas={cuentas}
                 tempActiva={tempActiva}
                 pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
-                registrarPago={registrarPago} borrarPago={borrarCobroSocio}
+                registrarPago={registrarPago} borrarPago={borrarCobroSocio} borrarPagosLote={borrarCobrosSocioLote}
                 onGuardar={(lista) => persist({ ...data, socios: lista })}
                 setAviso={setAviso}
               />
@@ -2213,6 +2334,7 @@ function TesoreriaClub() {
                 socios={data.socios} cuentas={cuentas} tempActiva={tempActiva}
                 cobrosSocios={cobrosSocios} pagadoPor={pagadoPor}
                 registrarCobroSocio={registrarCobroSocio} borrarCobroSocio={borrarCobroSocio}
+                borrarCobrosLote={borrarCobrosSocioLote} registrarCobrosLote={registrarCobrosSocioLote}
                 cuentaNombre={cuentaNombre} setAviso={setAviso}
               />
             )}
@@ -2247,7 +2369,7 @@ function TesoreriaClub() {
             personas={data.jugadores} equipos={data.equipos} catSocios={null} cuentas={cuentas}
             tempActiva={tempActiva}
             pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
-            registrarPago={registrarPago} borrarPago={borrarCobroCantera}
+            registrarPago={registrarPago} borrarPago={borrarCobroCantera} borrarPagosLote={borrarCobrosCanteraLote}
             onGuardar={(lista) => persist({ ...data, jugadores: lista })}
             setAviso={setAviso}
           />
@@ -3083,7 +3205,7 @@ function PanelPresupuesto({ data, persist, tempActiva, porCategoria, totalesTemp
 // ==================================================================
 // Panel de Traspasos entre cuentas del club
 // ==================================================================
-function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion, onGuardar, borrarMov }) {
+function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion, onGuardar, borrarMov, borrarMovsLote }) {
   const vacio = () => ({
     fecha: hoyISO(),
     cuentaId: cuentas.find((c) => c.tipo === "efectivo")?.id || cuentas[0]?.id || "",
@@ -3094,6 +3216,7 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
   const [editId, setEditId] = useState(null);
   const [editF, setEditF] = useState(vacio());   // datos del traspaso que se edita en línea
   const [aviso, setAvisoLocal] = useState("");
+  const [selec, setSelec] = useState([]);       // traspasos marcados con la casilla
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -3154,6 +3277,11 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
   const lista = movs
     .filter((m) => m.tipo === "traspaso")
     .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+
+  // ---------- acciones en bloque (casillas marcadas) ----------
+  const idsVisibles = lista.map((m) => m.id);
+  const marcados = selec.filter((id) => idsVisibles.includes(id));
+  const borrarSeleccion = () => { borrarMovsLote(marcados); setSelec([]); };
 
   return (
     <>
@@ -3236,13 +3364,23 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
 
       {/* Historial */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <div className="px-4 py-3 border-b border-slate-200">
-          <h3 className="font-bold">Historial de traspasos ({lista.length})</h3>
+        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center gap-2">
+          <h3 className="font-bold mr-auto">Historial de traspasos ({lista.length})</h3>
+          <span className="text-xs text-slate-500">Marca las casillas para borrar varios de una vez</span>
         </div>
+
+        <BarraSelec n={marcados.length} etiqueta="traspaso marcado" onLimpiar={() => setSelec([])}>
+          <BotonBorrarSelec n={marcados.length} texto="Borrar los traspasos marcados"
+            pregunta="¿Borrar estos traspasos?" onConfirmar={borrarSeleccion} />
+        </BarraSelec>
+
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <th className="px-4 py-2">Fecha</th>
+              <th className="pl-4 pr-1 py-2 w-8">
+                <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
+              </th>
+              <th className="px-2 py-2">Fecha</th>
               <th className="px-2 py-2">Desde</th>
               <th className="px-2 py-2">Hasta</th>
               <th className="px-2 py-2">Concepto</th>
@@ -3253,12 +3391,15 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
           </thead>
           <tbody className="divide-y divide-slate-100">
             {lista.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-6 text-slate-500">Todavía no hay traspasos. Usa el formulario de arriba para el primero.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-slate-500">Todavía no hay traspasos. Usa el formulario de arriba para el primero.</td></tr>
             )}
             {lista.map((m) => (
               <React.Fragment key={m.id}>
-              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : ""}`}>
-                <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
+              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : selec.includes(m.id) ? "bg-amber-100" : ""}`}>
+                <td className="pl-4 pr-1 py-2">
+                  <CasillaFila id={m.id} selec={selec} setSelec={setSelec} titulo="Marcar este traspaso" />
+                </td>
+                <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
                 <td className="px-2 py-2 max-w-36 truncate text-red-700 font-semibold">{cuentaNombre(m.cuentaId)}</td>
                 <td className="px-2 py-2 max-w-36 truncate text-emerald-700 font-semibold">→ {cuentaNombre(m.destinoId)}</td>
                 <td className="px-2 py-2 max-w-52 truncate text-slate-600">{m.concepto || "—"}</td>
@@ -3271,7 +3412,7 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
               </tr>
               {editId === m.id && (
                 <tr className="bg-amber-50">
-                  <td colSpan={7} className="px-4 py-3">
+                  <td colSpan={8} className="px-4 py-3">
                     <div className="rounded-lg border border-amber-300 bg-white p-3">
                       <div className="text-xs font-bold text-amber-800 mb-2">Editar traspaso</div>
                       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 items-end">
@@ -3326,7 +3467,7 @@ function PanelTraspasos({ cuentas, saldos, movs, cuentaNombre, pedirConfirmacion
 // ==================================================================
 // Panel de Taquilla
 // ==================================================================
-function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrarTaquilla }) {
+function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrarTaquilla, borrarTaquillasLote }) {
   const vacio = () => ({
     fecha: hoyISO(), concepto: "",
     cuentaId: cuentas.find((c) => c.tipo === "efectivo")?.id || cuentas[0]?.id || "",
@@ -3338,6 +3479,7 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
   });
   const [f, setF] = useState(vacio());
   const [editIdT, setEditIdT] = useState(null);
+  const [selec, setSelec] = useState([]);   // taquillas marcadas con la casilla
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -3368,6 +3510,11 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
   const lista = [...taquillas]
     .filter((t) => temporadaDe(t.fecha) === tempActiva)
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+
+  // ---------- acciones en bloque (casillas marcadas) ----------
+  const idsVisibles = lista.map((t) => t.id);
+  const marcados = selec.filter((id) => idsVisibles.includes(id));
+  const borrarSeleccion = () => { borrarTaquillasLote(marcados); setSelec([]); };
 
   const totales = lista.reduce((acc, t) => {
     const a5 = vendidas(t.e5desde, t.e5hasta), a10 = vendidas(t.e10desde, t.e10hasta),
@@ -3519,10 +3666,17 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+        <BarraSelec n={marcados.length} etiqueta="taquilla marcada" onLimpiar={() => setSelec([])}>
+          <BotonBorrarSelec n={marcados.length} texto="Borrar las taquillas marcadas"
+            pregunta="¿Borrar estas taquillas y sus ingresos?" onConfirmar={borrarSeleccion} />
+        </BarraSelec>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <th className="px-4 py-2">Fecha</th>
+              <th className="pl-4 pr-1 py-2 w-8">
+                <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
+              </th>
+              <th className="px-2 py-2">Fecha</th>
               <th className="px-2 py-2">Partido</th>
               <th className="px-2 py-2">Entradas 5 €</th>
               <th className="px-2 py-2">Entradas 10 €</th>
@@ -3536,7 +3690,7 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
           </thead>
           <tbody className="divide-y divide-slate-100">
             {lista.length === 0 && (
-              <tr><td colSpan={10} className="px-4 py-6 text-slate-500">Sin taquillas anotadas en la temporada {tempActiva}.</td></tr>
+              <tr><td colSpan={11} className="px-4 py-6 text-slate-500">Sin taquillas anotadas en la temporada {tempActiva}.</td></tr>
             )}
             {lista.map((t) => {
               const a5 = vendidas(t.e5desde, t.e5hasta);
@@ -3546,8 +3700,11 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
               const tEnt = a5 * num(t.precio5) + a10 * num(t.precio10) + aa * num(t.precioAnt);
               const tRifa = at * num(t.precioTira);
               return (
-                <tr key={t.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(t.fecha)}</td>
+                <tr key={t.id} className={selec.includes(t.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
+                  <td className="pl-4 pr-1 py-2">
+                    <CasillaFila id={t.id} selec={selec} setSelec={setSelec} titulo="Marcar esta taquilla" />
+                  </td>
+                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(t.fecha)}</td>
                   <td className="px-2 py-2 max-w-44 truncate font-semibold">{t.concepto}</td>
                   <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a5 > 0 ? `${t.e5desde}–${t.e5hasta} (${a5})` : "—"}</td>
                   <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a10 > 0 ? `${t.e10desde}–${t.e10hasta} (${a10})` : "—"}</td>
@@ -3567,7 +3724,7 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
           {lista.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
-                <td className="px-4 py-2" colSpan={2}>Total temporada</td>
+                <td className="px-4 py-2" colSpan={3}>Total temporada</td>
                 <td className="px-2 py-2 tabular-nums">{totales.n5}</td>
                 <td className="px-2 py-2 tabular-nums">{totales.n10}</td>
                 <td className="px-2 py-2 tabular-nums">{totales.nAnt}</td>
@@ -3588,10 +3745,11 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
 // ==================================================================
 // Panel de Caja
 // ==================================================================
-function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapido, editarMov, borrarMov, pedirConfirmacion,
+function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapido, editarMov, borrarMov, borrarMovsLote, pedirConfirmacion,
   editId, editForm, setEditForm, guardarEdicion, cancelarEdicion }) {
   const cajas = cuentas.filter((c) => c.tipo === "efectivo");
   const [cajaId, setCajaId] = useState(cajas[0]?.id || "");
+  const [selec, setSelec] = useState([]);   // movimientos marcados con la casilla
   const [contado, setContado] = useState("");
   const [rapido, setRapido] = useState({ fecha: hoyISO(), tipo: "ingreso", categoria: "", empresa: "", concepto: "", importe: "" });
 
@@ -3620,6 +3778,11 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
 
   const saldoCaja = idCaja ? saldos[idCaja] || 0 : 0;
   const dif = contado !== "" ? num(contado) - saldoCaja : null;
+
+  // ---------- acciones en bloque (casillas marcadas) ----------
+  const idsVisibles = filas.map(({ m }) => m.id);
+  const marcados = selec.filter((id) => idsVisibles.includes(id));
+  const borrarSeleccion = () => { borrarMovsLote(marcados); setSelec([]); };
 
   const anotar = () => {
     const imp = num(rapido.importe);
@@ -3710,11 +3873,20 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
         <p className="text-xs text-slate-500 mt-2">Para llevar efectivo al banco (o traerlo), usa un «Traspaso entre cuentas» en la pestaña Movimientos.</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200">
+        <BarraSelec n={marcados.length} etiqueta="movimiento marcado" onLimpiar={() => setSelec([])}>
+          <BotonBorrarSelec n={marcados.length} texto="Borrar los movimientos marcados"
+            pregunta="¿Borrar estos movimientos de caja?" onConfirmar={borrarSeleccion} />
+          <span className="text-xs text-slate-500">Las líneas-resumen de socios, cantera o publicidad no se borran desde aquí.</span>
+        </BarraSelec>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-              <th className="px-4 py-2">Fecha</th>
+              <th className="pl-4 pr-1 py-2 w-8">
+                <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
+              </th>
+              <th className="px-2 py-2">Fecha</th>
               <th className="px-2 py-2">Empresa / persona</th>
               <th className="px-2 py-2">Concepto</th>
               <th className="px-2 py-2">Categoría</th>
@@ -3726,12 +3898,15 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filas.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-6 text-slate-500">La caja no tiene movimientos todavía.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-6 text-slate-500">La caja no tiene movimientos todavía.</td></tr>
             )}
             {filas.map(({ m, delta, saldo }) => (
               <React.Fragment key={m.id}>
-              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : ""}`}>
-                <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
+              <tr className={`hover:bg-slate-50 ${editId === m.id ? "bg-amber-50" : selec.includes(m.id) ? "bg-amber-100" : ""}`}>
+                <td className="pl-4 pr-1 py-2">
+                  <CasillaFila id={m.id} selec={selec} setSelec={setSelec} titulo="Marcar este movimiento" />
+                </td>
+                <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
                 <td className="px-2 py-2 max-w-40 truncate font-medium text-slate-700">{m.empresa || <span className="text-slate-400">—</span>}</td>
                 <td className="px-2 py-2 max-w-52 truncate">{m.concepto || m.categoria}
                   {m.tipo === "traspaso" && <span className="text-xs text-amber-700 ml-1">(traspaso {m.destinoId === caja.id ? "desde" : "a"} {cuentaNombre(m.destinoId === caja.id ? m.cuentaId : m.destinoId)})</span>}
@@ -3747,12 +3922,13 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
               </tr>
               {editId === m.id && (
                 <EditorMovInline form={editForm} setForm={setEditForm} cuentas={cuentas}
-                  categorias={categorias} onGuardar={guardarEdicion} onCancelar={cancelarEdicion} colSpan={8} />
+                  categorias={categorias} onGuardar={guardarEdicion} onCancelar={cancelarEdicion} colSpan={9} />
               )}
               </React.Fragment>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );
@@ -3761,7 +3937,7 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
 // ==================================================================
 // Panel de Cartelería / Publicidad con IVA
 // ==================================================================
-function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrarCartel, cuentaNombre }) {
+function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrarCartel, borrarCartelesLote, cuentaNombre }) {
   const vacio = () => ({
     fecha: hoyISO(), cliente: "", tipo: "campo", concepto: "",
     base: "", iva: "21", estado: "cobrado",
@@ -3772,6 +3948,7 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
   const [editIdC, setEditIdC] = useState(null);
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [selec, setSelec] = useState([]);   // contratos marcados con la casilla
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -3816,6 +3993,13 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
       cobrado: cs.filter((c) => c.estado === "cobrado").reduce((s, c) => s + c.total, 0),
     };
   }).filter((r) => r.n > 0);
+
+  // ---------- acciones en bloque (casillas marcadas) ----------
+  const idsVisibles = lista.map((c) => c.id);
+  const marcados = selec.filter((id) => idsVisibles.includes(id));
+  const totalMarcado = lista.filter((c) => marcados.includes(c.id)).reduce((t, c) => t + num(c.total), 0);
+
+  const borrarSeleccion = () => { borrarCartelesLote(marcados); setSelec([]); };
 
   return (
     <>
@@ -3951,11 +4135,21 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
             <option value="pendiente">Pendientes</option>
           </select>
         </div>
+
+        <BarraSelec n={marcados.length} etiqueta="contrato marcado" onLimpiar={() => setSelec([])}>
+          <span className="tabular-nums text-slate-600">Total marcado: <b>{eur(totalMarcado)}</b></span>
+          <BotonBorrarSelec n={marcados.length} texto="Borrar los contratos marcados"
+            pregunta="¿Borrar estos contratos de publicidad?" onConfirmar={borrarSeleccion} />
+        </BarraSelec>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="px-4 py-2">Fecha</th>
+                <th className="pl-4 pr-1 py-2 w-8">
+                  <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
+                </th>
+                <th className="px-2 py-2">Fecha</th>
                 <th className="px-2 py-2">Anunciante</th>
                 <th className="px-2 py-2">Tipo</th>
                 <th className="px-2 py-2 text-right">Base</th>
@@ -3968,11 +4162,14 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
             </thead>
             <tbody className="divide-y divide-slate-100">
               {lista.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-slate-500">Sin publicidad anotada en la temporada {tempActiva}.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-6 text-slate-500">Sin publicidad anotada en la temporada {tempActiva}.</td></tr>
               )}
               {lista.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(c.fecha)}</td>
+                <tr key={c.id} className={selec.includes(c.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
+                  <td className="pl-4 pr-1 py-2">
+                    <CasillaFila id={c.id} selec={selec} setSelec={setSelec} titulo="Marcar este contrato" />
+                  </td>
+                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(c.fecha)}</td>
                   <td className="px-2 py-2 max-w-40 truncate font-semibold">{c.cliente}
                     {c.concepto && <span className="block text-xs font-normal text-slate-400 truncate">{c.concepto}</span>}
                   </td>
@@ -3998,7 +4195,7 @@ function PanelCarteleria({ cartelera, cuentas, tempActiva, guardarCartel, borrar
             {lista.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold">
-                  <td className="px-4 py-2" colSpan={3}>Total mostrado</td>
+                  <td className="px-4 py-2" colSpan={4}>Total mostrado</td>
                   <td className="px-2 py-2 text-right tabular-nums">{eur(lista.reduce((s, c) => s + c.base, 0))}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{eur(lista.reduce((s, c) => s + c.cuotaIva, 0))}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{eur(lista.reduce((s, c) => s + c.total, 0))}</td>
@@ -4092,7 +4289,7 @@ function PanelCuentas({ data, persist, saldos, setAviso }) {
 // movimiento por mes y cuenta, que se actualiza solo.
 // ==================================================================
 function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
-  registrarCobroSocio, borrarCobroSocio, cuentaNombre, setAviso }) {
+  registrarCobroSocio, borrarCobroSocio, borrarCobrosLote, registrarCobrosLote, cuentaNombre, setAviso }) {
 
   // Meses de la temporada activa (julio → junio)
   const mesesTemp = useMemo(() => {
@@ -4115,6 +4312,8 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
   const [cuentaSel, setCuentaSel] = useState(cuentas[0]?.id || "");
   const [formaSel, setFormaSel] = useState("Efectivo");
   const [busca, setBusca] = useState("");
+  const [selPag, setSelPag] = useState([]);   // cobros marcados (tabla de pagados)
+  const [selPen, setSelPen] = useState([]);   // socios marcados (tabla de pendientes)
 
   const activos = (socios || []).filter((s) => s.activo !== false);
 
@@ -4155,6 +4354,33 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
     });
     if (ok === false) return;
   };
+
+  // ---------- acciones en bloque ----------
+  const idsCobrosMes = cobrosMes.map((c) => c.id);
+  const marcadosPag = selPag.filter((id) => idsCobrosMes.includes(id));
+  const idsPendientes = pendientes.map((s) => s.id);
+  const marcadosPen = selPen.filter((id) => idsPendientes.includes(id));
+
+  const borrarCobrosSeleccion = () => {
+    borrarCobrosLote(marcadosPag);
+    setSelPag([]);
+  };
+
+  // Cobra de golpe a todos los socios marcados, con la cuenta y forma de arriba
+  const cobrarSeleccion = () => {
+    const lista = pendientes
+      .filter((s) => marcadosPen.includes(s.id))
+      .map((s) => {
+        const pendiente = Math.max(0, num(s.cuota) - pagadoPor("socio", s.id));
+        return { socioId: s.id, fecha: fechaDelMes(), importe: pendiente > 0 ? pendiente : num(s.cuota), cuentaId: cuentaSel, forma: formaSel };
+      });
+    registrarCobrosLote(lista);
+    setSelPen([]);
+  };
+
+  const totalMarcadoPen = pendientes
+    .filter((s) => marcadosPen.includes(s.id))
+    .reduce((t, s) => t + Math.max(0, num(s.cuota) - pagadoPor("socio", s.id)), 0);
 
   const inp = "border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white";
 
@@ -4221,13 +4447,24 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
       <div className="bg-white rounded-xl border border-slate-200">
         <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          <h3 className="font-bold">Pagados en {mesLabel(mesSel)} ({cobrosMes.length})</h3>
+          <h3 className="font-bold mr-auto">Pagados en {mesLabel(mesSel)} ({cobrosMes.length})</h3>
+          <span className="text-xs text-slate-500">Marca las casillas para quitar varios cobros de una vez</span>
         </div>
+
+        <BarraSelec n={marcadosPag.length} etiqueta="cobro marcado" onLimpiar={() => setSelPag([])}>
+          <BotonBorrarSelec n={marcadosPag.length} texto="Borrar los cobros marcados"
+            pregunta="¿Borrar estos cobros?" onConfirmar={borrarCobrosSeleccion} />
+          <span className="text-xs text-slate-500">Los socios vuelven a la lista de pendientes y el resumen del mes se recalcula solo.</span>
+        </BarraSelec>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="px-4 py-2">Nº</th>
+                <th className="pl-4 pr-1 py-2 w-8">
+                  <CasillaTodo ids={idsCobrosMes} selec={selPag} setSelec={setSelPag} />
+                </th>
+                <th className="px-2 py-2">Nº</th>
                 <th className="px-2 py-2">Apellidos, nombre</th>
                 <th className="px-2 py-2">Categoría</th>
                 <th className="px-2 py-2 text-right">Importe</th>
@@ -4238,7 +4475,7 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
             </thead>
             <tbody className="divide-y divide-slate-100">
               {cobrosMes.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-slate-500">Aún no hay cobros anotados en {mesLabel(mesSel)}. Marca abajo a los socios que van pagando.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-slate-500">Aún no hay cobros anotados en {mesLabel(mesSel)}. Marca abajo a los socios que van pagando.</td></tr>
               )}
               {cobrosMes
                 .slice()
@@ -4246,8 +4483,11 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
                 .map((c) => {
                   const s = socioDe(c.socioId);
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2 tabular-nums font-semibold">{s ? numeroSocio(s) : "—"}</td>
+                    <tr key={c.id} className={selPag.includes(c.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
+                      <td className="pl-4 pr-1 py-2">
+                        <CasillaFila id={c.id} selec={selPag} setSelec={setSelPag} titulo="Marcar este cobro" />
+                      </td>
+                      <td className="px-2 py-2 tabular-nums font-semibold">{s ? numeroSocio(s) : "—"}</td>
                       <td className="px-2 py-2">{s ? apellidosNombre(s) : <span className="text-slate-400">socio borrado</span>}</td>
                       <td className="px-2 py-2 text-slate-600">{s?.categoria || "—"}</td>
                       <td className="px-2 py-2 text-right tabular-nums text-emerald-700 font-semibold">{eur(c.importe)}</td>
@@ -4271,11 +4511,23 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
           <h3 className="font-bold mr-auto">Pendientes de pagar la temporada ({pendientes.length})</h3>
           <span className="text-xs text-slate-500">Al pulsar «Cobrar» se anota con la cuenta y forma de arriba</span>
         </div>
+
+        <BarraSelec n={marcadosPen.length} etiqueta="socio marcado" onLimpiar={() => setSelPen([])}>
+          <button onClick={cobrarSeleccion}
+            className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 rounded-lg px-3 py-1 text-xs font-semibold">
+            Cobrar los {marcadosPen.length} marcados ({eur(totalMarcadoPen)})
+          </button>
+          <span className="text-xs text-slate-500">Se anotan con fecha de {mesLabel(mesSel)}, en {cuentaNombre(cuentaSel)} y como {formaSel.toLowerCase()}.</span>
+        </BarraSelec>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="px-4 py-2">Nº</th>
+                <th className="pl-4 pr-1 py-2 w-8">
+                  <CasillaTodo ids={idsPendientes} selec={selPen} setSelec={setSelPen} />
+                </th>
+                <th className="px-2 py-2">Nº</th>
                 <th className="px-2 py-2">Apellidos, nombre</th>
                 <th className="px-2 py-2">Categoría</th>
                 <th className="px-2 py-2 text-right">Cuota</th>
@@ -4286,14 +4538,17 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pendientes.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-emerald-700 font-semibold">¡Todos los socios al día en esta temporada!</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-emerald-700 font-semibold">¡Todos los socios al día en esta temporada!</td></tr>
               )}
               {pendientes.map((s) => {
                 const pagado = pagadoPor("socio", s.id);
                 const debe = Math.max(0, num(s.cuota) - pagado);
                 return (
-                  <tr key={s.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2 tabular-nums font-semibold">{numeroSocio(s)}</td>
+                  <tr key={s.id} className={selPen.includes(s.id) ? "bg-amber-100" : "hover:bg-slate-50"}>
+                    <td className="pl-4 pr-1 py-2">
+                      <CasillaFila id={s.id} selec={selPen} setSelec={setSelPen} titulo="Marcar este socio para cobrarlo" />
+                    </td>
+                    <td className="px-2 py-2 tabular-nums font-semibold">{numeroSocio(s)}</td>
                     <td className="px-2 py-2">{apellidosNombre(s)}</td>
                     <td className="px-2 py-2 text-slate-600">{s.categoria || "—"}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{eur(s.cuota)}</td>
@@ -4319,7 +4574,7 @@ function PanelCobrosMes({ socios, cuentas, tempActiva, cobrosSocios, pagadoPor,
 // Panel compartido de cuotas: Socios y Cantera
 // ==================================================================
 function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, tempActiva,
-  pagadoPor, pagosDe, cuentaNombre, registrarPago, borrarPago, onGuardar, setAviso }) {
+  pagadoPor, pagosDe, cuentaNombre, registrarPago, borrarPago, borrarPagosLote, onGuardar, setAviso }) {
 
   const esSocio = modo === "socio";
   const refTipo = esSocio ? "socio" : "jugador";
@@ -4345,6 +4600,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
   const [busca, setBusca] = useState("");
   const [abierto, setAbierto] = useState(null);
   const [pago, setPago] = useState(null);
+  const [selec, setSelec] = useState([]);   // fichas marcadas con la casilla
 
   useEffect(() => { if (!editandoId && esSocio) setAlta((a) => ({ ...a, numero: sigNumeroDe(a.categoria) })); }, [personas.length]); // eslint-disable-line
 
@@ -4533,6 +4789,31 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
   const confirmarPago = () => {
     registrarPago({ refTipo, ...pago });
     setPago(null);
+  };
+
+  // ---------- acciones en bloque (casillas marcadas) ----------
+  const idsVisibles = lista.map((p) => p.id);
+  // Solo cuentan los marcados que siguen viéndose con los filtros actuales
+  const marcados = selec.filter((id) => idsVisibles.includes(id));
+  const marcadosPers = lista.filter((p) => marcados.includes(p.id));
+  const pagosMarcados = marcadosPers.flatMap((p) => pagosDe(refTipo, p.id).map((m) => m.id));
+
+  const seleccionarPagados = () => {
+    const ids = lista.filter((p) => estadoDe(p) === "pagado").map((p) => p.id);
+    if (ids.length === 0) return setAviso(`No hay ${esSocio ? "socios" : "jugadores"} con la cuota pagada en la lista que estás viendo.`);
+    setSelec(ids);
+  };
+
+  const borrarPagosSeleccion = () => {
+    if (pagosMarcados.length === 0) return setAviso("Los marcados no tienen ningún pago anotado en esta temporada.");
+    borrarPagosLote(pagosMarcados);
+    setSelec([]);
+  };
+
+  const borrarFichasSeleccion = () => {
+    onGuardar(personas.filter((p) => !marcados.includes(p.id)));
+    setAviso(`${marcados.length} ficha${marcados.length === 1 ? "" : "s"} eliminada${marcados.length === 1 ? "" : "s"}. Los pagos anotados no se han tocado.`);
+    setSelec([]);
   };
 
   const pillEstado = (e) =>
@@ -4794,12 +5075,34 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
           )}
           <input placeholder="Buscar…" value={busca} onChange={(e) => setBusca(e.target.value)}
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-36" />
+          <button onClick={seleccionarPagados} title={`Marca de golpe a todos los ${esSocio ? "socios" : "jugadores"} con la cuota pagada`}
+            className="border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-emerald-100">
+            ✓ Marcar pagados
+          </button>
         </div>
+
+        <BarraSelec n={marcados.length} etiqueta={esSocio ? "socio marcado" : "jugador marcado"} onLimpiar={() => setSelec([])}>
+          <BotonBorrarSelec n={pagosMarcados.length}
+            texto={`Borrar sus pagos (${pagosMarcados.length})`}
+            pregunta="¿Borrar los pagos marcados?"
+            onConfirmar={borrarPagosSeleccion} />
+          <BotonBorrarSelec n={marcados.length}
+            texto="Borrar las fichas"
+            pregunta={esSocio ? "¿Borrar las fichas de estos socios?" : "¿Borrar las fichas de estos jugadores?"}
+            onConfirmar={borrarFichasSeleccion} />
+          <span className="text-xs text-slate-500">
+            «Borrar sus pagos» quita lo cobrado de la temporada {tempActiva} y deja la ficha; «Borrar las fichas» elimina {esSocio ? "a los socios" : "a los jugadores"} de la lista.
+          </span>
+        </BarraSelec>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
-                <th className="px-4 py-2">{esSocio ? "Nº" : "Equipo"}</th>
+                <th className="pl-4 pr-1 py-2 w-8">
+                  <CasillaTodo ids={idsVisibles} selec={selec} setSelec={setSelec} />
+                </th>
+                <th className="px-2 py-2">{esSocio ? "Nº" : "Equipo"}</th>
                 <th className="px-2 py-2">Apellidos, nombre</th>
                 {esSocio && <th className="px-2 py-2">Categoría</th>}
                 {esSocio && <th className="px-2 py-2">DNI</th>}
@@ -4815,7 +5118,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
             </thead>
             <tbody className="divide-y divide-slate-100">
               {lista.length === 0 && (
-                <tr><td colSpan={esSocio ? 12 : 7} className="px-4 py-6 text-slate-500">
+                <tr><td colSpan={esSocio ? 13 : 8} className="px-4 py-6 text-slate-500">
                   {personas.length === 0 ? `Aún no hay ${esSocio ? "socios" : "jugadores"} dados de alta. Usa el formulario de arriba.` : "Nadie coincide con los filtros."}
                 </td></tr>
               )}
@@ -4832,6 +5135,7 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
                     reactivarPersona={reactivarPersona}
                     pagos={abiertoEste ? pagosDe(refTipo, p.id) : []}
                     cuentaNombre={cuentaNombre} borrarPago={borrarPago} tempActiva={tempActiva}
+                    selec={selec} setSelec={setSelec}
                   />
                 );
               })}
@@ -4884,21 +5188,27 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
   );
 }
 
-function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste, setAbierto, abrirPago, editarPersona, quitarPersona, reactivarPersona, pagos, cuentaNombre, borrarPago, tempActiva }) {
-  const cols = esSocio ? 12 : 7;
+function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste, setAbierto, abrirPago, editarPersona, quitarPersona, reactivarPersona, pagos, cuentaNombre, borrarPago, tempActiva, selec, setSelec }) {
+  const cols = esSocio ? 13 : 8;
   const esBaja = esSocio && p.activo === false;
   // Socios de Empresa y de Honor se distinguen visualmente del resto:
   // fila con fondo de color y la categoría como etiqueta con icono.
   const catNorm = esSocio ? (p.categoria || "").toLowerCase() : "";
   const catEsp = catNorm.includes("empresa") ? "empresa" : catNorm.includes("honor") ? "honor" : null;
-  const filaCls = esBaja ? "bg-slate-50 text-slate-400 hover:bg-slate-100"
+  const marcada = (selec || []).includes(p.id);
+  const filaCls = marcada ? "bg-amber-100 hover:bg-amber-100 border-l-4 border-l-amber-500"
+    : esBaja ? "bg-slate-50 text-slate-400 hover:bg-slate-100"
     : catEsp === "empresa" ? "bg-sky-50 hover:bg-sky-100 border-l-4 border-l-sky-400"
     : catEsp === "honor" ? "bg-amber-50 hover:bg-amber-100 border-l-4 border-l-amber-400"
     : "hover:bg-slate-50";
   return (
     <>
       <tr className={filaCls}>
-        <td className="px-4 py-2 tabular-nums font-semibold whitespace-nowrap">
+        <td className="pl-4 pr-1 py-2">
+          <CasillaFila id={p.id} selec={selec} setSelec={setSelec}
+            titulo={esSocio ? "Marcar este socio" : "Marcar este jugador"} />
+        </td>
+        <td className="px-2 py-2 tabular-nums font-semibold whitespace-nowrap">
           {esSocio ? (
             <>
               {esBaja ? <span className="text-slate-400">—</span> : p.numero}
