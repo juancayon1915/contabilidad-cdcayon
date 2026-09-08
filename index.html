@@ -1208,9 +1208,9 @@ function TesoreriaClub() {
 
   // ---------- taquilla ----------
   const guardarTaquilla = (t, idEdit) => {
-    const n5 = vendidas(t.e5desde, t.e5hasta);
-    const n10 = vendidas(t.e10desde, t.e10hasta);
-    const nAnt = vendidas(t.aDesde, t.aHasta);
+    const n5 = vendidas(t.e5desde, t.e5hasta) + vendidas(t.e5desde2, t.e5hasta2) + vendidas(t.e5desde3, t.e5hasta3);
+    const n10 = vendidas(t.e10desde, t.e10hasta) + vendidas(t.e10desde2, t.e10hasta2) + vendidas(t.e10desde3, t.e10hasta3);
+    const nAnt = vendidas(t.aDesde, t.aHasta) + vendidas(t.aDesde2, t.aHasta2) + vendidas(t.aDesde3, t.aHasta3);
     const nTiras = vendidas(t.rDesde, t.rHasta);
     if (nTiras > 100) { setAviso("La rifa tiene como máximo 100 tiras (de la 1 a la 100)."); return false; }
     if (ent(t.rHasta) > 100) { setAviso("El número de tira no puede pasar de 100."); return false; }
@@ -1224,9 +1224,18 @@ function TesoreriaClub() {
     const reg = {
       id: idEdit || uid("t"),
       fecha: t.fecha, concepto: t.concepto.trim(), cuentaId: t.cuentaId, forma: t.forma,
-      e5desde: ent(t.e5desde), e5hasta: ent(t.e5hasta), precio5: num(t.precio5),
-      e10desde: ent(t.e10desde), e10hasta: ent(t.e10hasta), precio10: num(t.precio10),
-      aDesde: ent(t.aDesde), aHasta: ent(t.aHasta), precioAnt: num(t.precioAnt),
+      e5desde: ent(t.e5desde), e5hasta: ent(t.e5hasta),
+      e5desde2: ent(t.e5desde2), e5hasta2: ent(t.e5hasta2),
+      e5desde3: ent(t.e5desde3), e5hasta3: ent(t.e5hasta3),
+      precio5: num(t.precio5),
+      e10desde: ent(t.e10desde), e10hasta: ent(t.e10hasta),
+      e10desde2: ent(t.e10desde2), e10hasta2: ent(t.e10hasta2),
+      e10desde3: ent(t.e10desde3), e10hasta3: ent(t.e10hasta3),
+      precio10: num(t.precio10),
+      aDesde: ent(t.aDesde), aHasta: ent(t.aHasta),
+      aDesde2: ent(t.aDesde2), aHasta2: ent(t.aHasta2),
+      aDesde3: ent(t.aDesde3), aHasta3: ent(t.aHasta3),
+      precioAnt: num(t.precioAnt),
       rDesde: ent(t.rDesde), rHasta: ent(t.rHasta), precioTira: num(t.precioTira),
     };
 
@@ -3059,9 +3068,9 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
     fecha: hoyISO(), concepto: "",
     cuentaId: cuentas.find((c) => c.tipo === "efectivo")?.id || cuentas[0]?.id || "",
     forma: "Efectivo",
-    e5desde: "", e5hasta: "", precio5: "5",
-    e10desde: "", e10hasta: "", precio10: "10",
-    aDesde: "", aHasta: "", precioAnt: "5",
+    e5desde: "", e5hasta: "", e5desde2: "", e5hasta2: "", e5desde3: "", e5hasta3: "", precio5: "5",
+    e10desde: "", e10hasta: "", e10desde2: "", e10hasta2: "", e10desde3: "", e10hasta3: "", precio10: "10",
+    aDesde: "", aHasta: "", aDesde2: "", aHasta2: "", aDesde3: "", aHasta3: "", precioAnt: "5",
     rDesde: "", rHasta: "", precioTira: "1",
   });
   const [f, setF] = useState(vacio());
@@ -3070,9 +3079,12 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
 
-  const n5 = vendidas(f.e5desde, f.e5hasta);
-  const n10 = vendidas(f.e10desde, f.e10hasta);
-  const nAnt = vendidas(f.aDesde, f.aHasta);
+  const n5a = vendidas(f.e5desde, f.e5hasta), n5b = vendidas(f.e5desde2, f.e5hasta2), n5c = vendidas(f.e5desde3, f.e5hasta3);
+  const n10a = vendidas(f.e10desde, f.e10hasta), n10b = vendidas(f.e10desde2, f.e10hasta2), n10c = vendidas(f.e10desde3, f.e10hasta3);
+  const nAa = vendidas(f.aDesde, f.aHasta), nAb = vendidas(f.aDesde2, f.aHasta2), nAc = vendidas(f.aDesde3, f.aHasta3);
+  const n5 = n5a + n5b + n5c;
+  const n10 = n10a + n10b + n10c;
+  const nAnt = nAa + nAb + nAc;
   const nTiras = vendidas(f.rDesde, f.rHasta);
   const totEnt = n5 * num(f.precio5) + n10 * num(f.precio10) + nAnt * num(f.precioAnt);
   const totRifa = nTiras * num(f.precioTira);
@@ -3085,9 +3097,18 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
     setEditIdT(t.id);
     setF({
       fecha: t.fecha, concepto: t.concepto, cuentaId: t.cuentaId, forma: t.forma,
-      e5desde: t.e5desde || "", e5hasta: t.e5hasta || "", precio5: String(t.precio5 ?? 5),
-      e10desde: t.e10desde || "", e10hasta: t.e10hasta || "", precio10: String(t.precio10 ?? 10),
-      aDesde: t.aDesde || "", aHasta: t.aHasta || "", precioAnt: String(t.precioAnt ?? 5),
+      e5desde: t.e5desde || "", e5hasta: t.e5hasta || "",
+      e5desde2: t.e5desde2 || "", e5hasta2: t.e5hasta2 || "",
+      e5desde3: t.e5desde3 || "", e5hasta3: t.e5hasta3 || "",
+      precio5: String(t.precio5 ?? 5),
+      e10desde: t.e10desde || "", e10hasta: t.e10hasta || "",
+      e10desde2: t.e10desde2 || "", e10hasta2: t.e10hasta2 || "",
+      e10desde3: t.e10desde3 || "", e10hasta3: t.e10hasta3 || "",
+      precio10: String(t.precio10 ?? 10),
+      aDesde: t.aDesde || "", aHasta: t.aHasta || "",
+      aDesde2: t.aDesde2 || "", aHasta2: t.aHasta2 || "",
+      aDesde3: t.aDesde3 || "", aHasta3: t.aHasta3 || "",
+      precioAnt: String(t.precioAnt ?? 5),
       rDesde: t.rDesde || "", rHasta: t.rHasta || "", precioTira: String(t.precioTira ?? 1),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -3098,8 +3119,10 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
     .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 
   const totales = lista.reduce((acc, t) => {
-    const a5 = vendidas(t.e5desde, t.e5hasta), a10 = vendidas(t.e10desde, t.e10hasta),
-      aa = vendidas(t.aDesde, t.aHasta), at = vendidas(t.rDesde, t.rHasta);
+    const a5 = vendidas(t.e5desde, t.e5hasta) + vendidas(t.e5desde2, t.e5hasta2) + vendidas(t.e5desde3, t.e5hasta3),
+      a10 = vendidas(t.e10desde, t.e10hasta) + vendidas(t.e10desde2, t.e10hasta2) + vendidas(t.e10desde3, t.e10hasta3),
+      aa = vendidas(t.aDesde, t.aHasta) + vendidas(t.aDesde2, t.aHasta2) + vendidas(t.aDesde3, t.aHasta3),
+      at = vendidas(t.rDesde, t.rHasta);
     acc.n5 += a5; acc.n10 += a10; acc.nAnt += aa; acc.tiras += at;
     acc.ent += a5 * num(t.precio5) + a10 * num(t.precio10) + aa * num(t.precioAnt);
     acc.rifa += at * num(t.precioTira);
@@ -3147,54 +3170,87 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
 
         <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
           <div className="bg-slate-50 rounded-lg p-3">
-            <div className="text-sm font-bold mb-2">Entradas de 5 €</div>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-[11px] font-semibold text-slate-500">Nº desde
-                <input inputMode="numeric" placeholder="1" value={f.e5desde} onChange={(e) => setF({ ...f, e5desde: e.target.value })} className={inp + " tabular-nums"} />
-              </label>
-              <label className="text-[11px] font-semibold text-slate-500">Nº hasta
-                <input inputMode="numeric" placeholder="120" value={f.e5hasta} onChange={(e) => setF({ ...f, e5hasta: e.target.value })} className={inp + " tabular-nums"} />
-              </label>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold">Entradas de 5 €</div>
               <label className="text-[11px] font-semibold text-slate-500">Precio (€)
-                <input inputMode="decimal" value={f.precio5} onChange={(e) => setF({ ...f, precio5: e.target.value })} className={inp + " tabular-nums"} />
+                <input inputMode="decimal" value={f.precio5} onChange={(e) => setF({ ...f, precio5: e.target.value })} className={inp + " tabular-nums w-20"} />
               </label>
             </div>
+            {[
+              ["Talonario 1", "e5desde", "e5hasta", "1", "120"],
+              ["Talonario 2", "e5desde2", "e5hasta2", "1", "120"],
+              ["Talonario 3", "e5desde3", "e5hasta3", "1", "120"],
+            ].map(([label, kd, kh, pd, ph]) => (
+              <div key={kd} className="grid grid-cols-3 gap-2 mb-1 items-end">
+                <label className="text-[11px] font-semibold text-slate-500 col-span-1">{label}
+                  <input inputMode="numeric" placeholder={pd} value={f[kd]} onChange={(e) => setF({ ...f, [kd]: e.target.value })} className={inp + " tabular-nums"} />
+                </label>
+                <label className="text-[11px] font-semibold text-slate-500 col-span-1 self-end">Nº hasta
+                  <input inputMode="numeric" placeholder={ph} value={f[kh]} onChange={(e) => setF({ ...f, [kh]: e.target.value })} className={inp + " tabular-nums"} />
+                </label>
+                <div className="text-[11px] text-slate-500 self-end pb-2 tabular-nums">
+                  {vendidas(f[kd], f[kh]) > 0 ? `${vendidas(f[kd], f[kh])} uds.` : ""}
+                </div>
+              </div>
+            ))}
             <div className="text-xs text-slate-600 mt-2 tabular-nums">
               {n5 > 0 ? <>Vendidas: <b>{n5}</b> · Recaudación: <b className="text-emerald-700">{eur(n5 * num(f.precio5))}</b></> : "Deja en blanco si no se vendieron."}
             </div>
           </div>
 
           <div className="bg-slate-50 rounded-lg p-3">
-            <div className="text-sm font-bold mb-2">Entradas de 10 €</div>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-[11px] font-semibold text-slate-500">Nº desde
-                <input inputMode="numeric" placeholder="1" value={f.e10desde} onChange={(e) => setF({ ...f, e10desde: e.target.value })} className={inp + " tabular-nums"} />
-              </label>
-              <label className="text-[11px] font-semibold text-slate-500">Nº hasta
-                <input inputMode="numeric" placeholder="40" value={f.e10hasta} onChange={(e) => setF({ ...f, e10hasta: e.target.value })} className={inp + " tabular-nums"} />
-              </label>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold">Entradas de 10 €</div>
               <label className="text-[11px] font-semibold text-slate-500">Precio (€)
-                <input inputMode="decimal" value={f.precio10} onChange={(e) => setF({ ...f, precio10: e.target.value })} className={inp + " tabular-nums"} />
+                <input inputMode="decimal" value={f.precio10} onChange={(e) => setF({ ...f, precio10: e.target.value })} className={inp + " tabular-nums w-20"} />
               </label>
             </div>
+            {[
+              ["Talonario 1", "e10desde", "e10hasta", "1", "40"],
+              ["Talonario 2", "e10desde2", "e10hasta2", "1", "40"],
+              ["Talonario 3", "e10desde3", "e10hasta3", "1", "40"],
+            ].map(([label, kd, kh, pd, ph]) => (
+              <div key={kd} className="grid grid-cols-3 gap-2 mb-1 items-end">
+                <label className="text-[11px] font-semibold text-slate-500 col-span-1">{label}
+                  <input inputMode="numeric" placeholder={pd} value={f[kd]} onChange={(e) => setF({ ...f, [kd]: e.target.value })} className={inp + " tabular-nums"} />
+                </label>
+                <label className="text-[11px] font-semibold text-slate-500 col-span-1 self-end">Nº hasta
+                  <input inputMode="numeric" placeholder={ph} value={f[kh]} onChange={(e) => setF({ ...f, [kh]: e.target.value })} className={inp + " tabular-nums"} />
+                </label>
+                <div className="text-[11px] text-slate-500 self-end pb-2 tabular-nums">
+                  {vendidas(f[kd], f[kh]) > 0 ? `${vendidas(f[kd], f[kh])} uds.` : ""}
+                </div>
+              </div>
+            ))}
             <div className="text-xs text-slate-600 mt-2 tabular-nums">
               {n10 > 0 ? <>Vendidas: <b>{n10}</b> · Recaudación: <b className="text-emerald-700">{eur(n10 * num(f.precio10))}</b></> : "Deja en blanco si no se vendieron."}
             </div>
           </div>
 
           <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-            <div className="text-sm font-bold mb-2">Venta anticipada (5 €)</div>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-[11px] font-semibold text-slate-500">Nº desde
-                <input inputMode="numeric" placeholder="1" value={f.aDesde} onChange={(e) => setF({ ...f, aDesde: e.target.value })} className={inp + " tabular-nums"} />
-              </label>
-              <label className="text-[11px] font-semibold text-slate-500">Nº hasta
-                <input inputMode="numeric" placeholder="60" value={f.aHasta} onChange={(e) => setF({ ...f, aHasta: e.target.value })} className={inp + " tabular-nums"} />
-              </label>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold">Venta anticipada (5 €)</div>
               <label className="text-[11px] font-semibold text-slate-500">Precio (€)
-                <input inputMode="decimal" value={f.precioAnt} onChange={(e) => setF({ ...f, precioAnt: e.target.value })} className={inp + " tabular-nums"} />
+                <input inputMode="decimal" value={f.precioAnt} onChange={(e) => setF({ ...f, precioAnt: e.target.value })} className={inp + " tabular-nums w-20"} />
               </label>
             </div>
+            {[
+              ["Talonario 1", "aDesde", "aHasta", "1", "60"],
+              ["Talonario 2", "aDesde2", "aHasta2", "1", "60"],
+              ["Talonario 3", "aDesde3", "aHasta3", "1", "60"],
+            ].map(([label, kd, kh, pd, ph]) => (
+              <div key={kd} className="grid grid-cols-3 gap-2 mb-1 items-end">
+                <label className="text-[11px] font-semibold text-slate-500 col-span-1">{label}
+                  <input inputMode="numeric" placeholder={pd} value={f[kd]} onChange={(e) => setF({ ...f, [kd]: e.target.value })} className={inp + " tabular-nums"} />
+                </label>
+                <label className="text-[11px] font-semibold text-slate-500 col-span-1 self-end">Nº hasta
+                  <input inputMode="numeric" placeholder={ph} value={f[kh]} onChange={(e) => setF({ ...f, [kh]: e.target.value })} className={inp + " tabular-nums"} />
+                </label>
+                <div className="text-[11px] text-slate-500 self-end pb-2 tabular-nums">
+                  {vendidas(f[kd], f[kh]) > 0 ? `${vendidas(f[kd], f[kh])} uds.` : ""}
+                </div>
+              </div>
+            ))}
             <div className="text-xs text-slate-600 mt-2 tabular-nums">
               {nAnt > 0 ? <>Vendidas: <b>{nAnt}</b> · Recaudación: <b className="text-emerald-700">{eur(nAnt * num(f.precioAnt))}</b></> : "Deja en blanco si no hubo venta anticipada."}
             </div>
@@ -3267,9 +3323,13 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
               <tr><td colSpan={10} className="px-4 py-6 text-slate-500">Sin taquillas anotadas en la temporada {tempActiva}.</td></tr>
             )}
             {lista.map((t) => {
-              const a5 = vendidas(t.e5desde, t.e5hasta);
-              const a10 = vendidas(t.e10desde, t.e10hasta);
-              const aa = vendidas(t.aDesde, t.aHasta);
+              const rangoTxt = (d, h) => (vendidas(d, h) > 0 ? `${d}–${h} (${vendidas(d, h)})` : null);
+              const a5r = [rangoTxt(t.e5desde, t.e5hasta), rangoTxt(t.e5desde2, t.e5hasta2), rangoTxt(t.e5desde3, t.e5hasta3)].filter(Boolean);
+              const a10r = [rangoTxt(t.e10desde, t.e10hasta), rangoTxt(t.e10desde2, t.e10hasta2), rangoTxt(t.e10desde3, t.e10hasta3)].filter(Boolean);
+              const aar = [rangoTxt(t.aDesde, t.aHasta), rangoTxt(t.aDesde2, t.aHasta2), rangoTxt(t.aDesde3, t.aHasta3)].filter(Boolean);
+              const a5 = vendidas(t.e5desde, t.e5hasta) + vendidas(t.e5desde2, t.e5hasta2) + vendidas(t.e5desde3, t.e5hasta3);
+              const a10 = vendidas(t.e10desde, t.e10hasta) + vendidas(t.e10desde2, t.e10hasta2) + vendidas(t.e10desde3, t.e10hasta3);
+              const aa = vendidas(t.aDesde, t.aHasta) + vendidas(t.aDesde2, t.aHasta2) + vendidas(t.aDesde3, t.aHasta3);
               const at = vendidas(t.rDesde, t.rHasta);
               const tEnt = a5 * num(t.precio5) + a10 * num(t.precio10) + aa * num(t.precioAnt);
               const tRifa = at * num(t.precioTira);
@@ -3277,9 +3337,9 @@ function PanelTaquilla({ taquillas, cuentas, tempActiva, guardarTaquilla, borrar
                 <tr key={t.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2 tabular-nums text-slate-600 whitespace-nowrap">{fmtFecha(t.fecha)}</td>
                   <td className="px-2 py-2 max-w-44 truncate font-semibold">{t.concepto}</td>
-                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a5 > 0 ? `${t.e5desde}–${t.e5hasta} (${a5})` : "—"}</td>
-                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a10 > 0 ? `${t.e10desde}–${t.e10hasta} (${a10})` : "—"}</td>
-                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{aa > 0 ? `${t.aDesde}–${t.aHasta} (${aa})` : "—"}</td>
+                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a5r.length ? a5r.join(" + ") : "—"}</td>
+                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{a10r.length ? a10r.join(" + ") : "—"}</td>
+                  <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{aar.length ? aar.join(" + ") : "—"}</td>
                   <td className="px-2 py-2 tabular-nums text-slate-600 whitespace-nowrap">{at > 0 ? `tiras ${t.rDesde}–${t.rHasta} (${at})` : "—"}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-emerald-700 font-semibold">{tEnt > 0 ? eur(tEnt) : "—"}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-emerald-700 font-semibold">{tRifa > 0 ? eur(tRifa) : "—"}</td>
