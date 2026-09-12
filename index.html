@@ -19,10 +19,12 @@ tailwind.config = { theme: { extend: { fontFamily: {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-// ── Sincronización en la nube (Firebase, la misma que usaba la aplicación anterior) ──
-// Gracias a esto, todos los ordenadores que abran la dirección ven los mismos datos.
+// ── Sincronización en la nube (Firebase) + acceso con contraseña REAL (Firebase Authentication) ──
+// Gracias a esto, todos los ordenadores que abran la dirección ven los mismos datos, y solo
+// puede entrar quien tenga un usuario creado en Firebase Authentication (correo + contraseña).
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBwTEPIe1ELM1ymuvWKgA2yAQYKyO7hucA",
   authDomain: "contabilidadcdcayon.firebaseapp.com",
@@ -32,11 +34,12 @@ const FIREBASE_CONFIG = {
   appId: "1:719294567085:web:27d0c70ecd672839042c24"
 };
 const FB_DOC = "tesoreria"; // documento propio de esta aplicación en la nube
-let fbDb = null, fbListo = false, fbSyncTimer = null, fbOnRemoto = null, fbOnEstado = null;
+let fbDb = null, fbAuth = null, fbListo = false, fbSyncTimer = null, fbOnRemoto = null, fbOnEstado = null;
 function fbEstado(s) { try { if (fbOnEstado) fbOnEstado(s); } catch (e) {} }
 try {
   firebase.initializeApp(FIREBASE_CONFIG);
   fbDb = firebase.firestore();
+  fbAuth = firebase.auth();
   fbListo = true;
 } catch (e) { console.error("Firebase no disponible; la app funcionará solo en este ordenador.", e); }
 
@@ -576,9 +579,8 @@ function GraficaDonut({ items, tam = 150, grosor = 26 }) {
   );
 }
 
-function TesoreriaClub() {
+function TesoreriaClub({ userEmail, onLogout }) {
   const [data, setData] = useState(null);
-  const [acceso, setAcceso] = useState(false); // acceso con contraseña (se pide al abrir la aplicación)
   const [tab, setTab] = useState("resumen");
   const [form, setForm] = useState(emptyMov());
   const [editId, setEditId] = useState(null);
@@ -1411,24 +1413,6 @@ function TesoreriaClub() {
     return <div className="min-h-screen bg-slate-100 flex items-center justify-center font-sans text-slate-500">Cargando el libro de cuentas…</div>;
   }
 
-  // ---------- acceso con contraseña ----------
-  if (!acceso) {
-    return (
-      <PantallaAcceso
-        nombreClub={data.config.nombre}
-        claveGuardada={data.config.clave || ""}
-        onEntrar={(clave) => {
-          if (clave === (data.config.clave || "")) { setAcceso(true); return true; }
-          return false;
-        }}
-        onCrearClave={(clave) => {
-          persist({ ...data, config: { ...data.config, clave } });
-          setAcceso(true);
-        }}
-      />
-    );
-  }
-
   const catsForm = form.tipo === "ingreso" ? data.categorias.ingreso : data.categorias.gasto;
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
   const sel = inp + " bg-white";
@@ -1459,6 +1443,14 @@ function TesoreriaClub() {
               </div>
             </div>
             <div className="flex items-end gap-3">
+              <div className="text-right">
+                <div className="text-[10px] text-zinc-400 mb-1">{userEmail}</div>
+                <button onClick={onLogout}
+                  title="Cerrar la sesión en este ordenador"
+                  className="border border-zinc-600 bg-zinc-800/80 hover:bg-zinc-700 text-white font-semibold rounded-lg px-3 py-2 text-sm shadow">
+                  ⎋ Salir
+                </button>
+              </div>
               <div className="text-right">
                 <button onClick={alternarPantalla}
                   title={pantallaCompleta ? "Salir de pantalla completa (o pulsa Esc)" : "Ver los datos a pantalla completa, a todo el ancho"}
@@ -2145,9 +2137,8 @@ function TesoreriaClub() {
                 <p className="text-xs text-slate-500">La copia de seguridad descarga un archivo con todos los datos (cuentas, socios, cantera, taquillas, publicidad y movimientos). Haz una de vez en cuando y guárdala; con «Restaurar copia» la recuperas en cualquier momento o en otro ordenador.</p>
               </div>
 
-              {/* Contraseña de acceso a la aplicación */}
-              <AjusteClave clave={data.config.clave || ""} setAviso={setAviso}
-                onGuardar={(nueva) => persist({ ...data, config: { ...data.config, clave: nueva } })} />
+              {/* Acceso a la aplicación (ahora gestionado por Firebase Authentication) */}
+              <GestionAcceso userEmail={userEmail} setAviso={setAviso} />
 
               {/* Copia de seguridad automática a archivo */}
               <div className="pt-2 border-t border-slate-200 space-y-2">
@@ -4613,22 +4604,31 @@ function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste
 // ==================================================================
 // Pantalla de acceso con contraseña + información sobre la aplicación
 // ==================================================================
-function PantallaAcceso({ nombreClub, claveGuardada, onEntrar, onCrearClave }) {
-  const hayClave = Boolean(claveGuardada);
+// Pantalla de acceso: ahora con Firebase Authentication (correo + contraseña reales).
+// Solo entra quien tenga un usuario creado en Firebase Authentication del proyecto.
+function PantallaAcceso() {
+  const [email, setEmail] = useState("");
   const [clave, setClave] = useState("");
-  const [clave2, setClave2] = useState("");
   const [ver, setVer] = useState(false);
   const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
   const [infoAbierta, setInfoAbierta] = useState(false);
 
+  const traducirError = (err) => {
+    const map = {
+      "auth/invalid-email": "El correo no es válido.",
+      "auth/user-not-found": "No existe ningún usuario con ese correo.",
+      "auth/wrong-password": "La contraseña no es correcta.",
+      "auth/invalid-credential": "Correo o contraseña incorrectos.",
+      "auth/too-many-requests": "Demasiados intentos. Espera unos minutos.",
+    };
+    return map[err && err.code] || ("No se ha podido iniciar sesión: " + (err && err.message));
+  };
+
   const entrar = () => {
-    if (hayClave) {
-      if (!onEntrar(clave)) { setError("Contraseña incorrecta. Vuelve a intentarlo."); setClave(""); }
-    } else {
-      if (clave.trim().length < 4) return setError("La contraseña debe tener al menos 4 caracteres.");
-      if (clave !== clave2) return setError("Las dos contraseñas no coinciden.");
-      onCrearClave(clave.trim());
-    }
+    setError(""); setCargando(true);
+    fbAuth.signInWithEmailAndPassword(email.trim(), clave)
+      .catch((err) => { setError(traducirError(err)); setCargando(false); });
   };
 
   const inp = "mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-normal";
@@ -4643,58 +4643,38 @@ function PantallaAcceso({ nombreClub, claveGuardada, onEntrar, onCrearClave }) {
             </div>
             <div>
               <div className="text-[11px] uppercase tracking-[0.25em] text-amber-600 font-bold">Libro oficial de tesorería</div>
-              <h1 className="font-display text-2xl font-extrabold tracking-tight text-slate-900">{nombreClub}</h1>
+              <h1 className="font-display text-2xl font-extrabold tracking-tight text-slate-900">CD Cayón</h1>
             </div>
           </div>
 
-          {hayClave ? (
-            <>
-              <p className="text-sm text-slate-600 text-center">Esta aplicación está protegida. Escribe la contraseña de acceso para entrar.</p>
-              <label className="block text-xs font-semibold text-slate-600">Contraseña
-                <div className="relative">
-                  <input type={ver ? "text" : "password"} value={clave} autoFocus
-                    onChange={(e) => { setClave(e.target.value); setError(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") entrar(); }}
-                    className={inp + " pr-16"} />
-                  <button type="button" onClick={() => setVer(!ver)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5 text-xs font-semibold text-slate-500 hover:text-slate-700">
-                    {ver ? "Ocultar" : "Ver"}
-                  </button>
-                </div>
-              </label>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-slate-600 text-center">
-                Es la primera vez que se protege la aplicación: <b>crea la contraseña de acceso</b>. A partir de ahora se pedirá cada vez que se abra el libro de cuentas.
-              </p>
-              <label className="block text-xs font-semibold text-slate-600">Nueva contraseña (mínimo 4 caracteres)
-                <input type={ver ? "text" : "password"} value={clave} autoFocus
-                  onChange={(e) => { setClave(e.target.value); setError(""); }} className={inp} />
-              </label>
-              <label className="block text-xs font-semibold text-slate-600">Repite la contraseña
-                <input type={ver ? "text" : "password"} value={clave2}
-                  onChange={(e) => { setClave2(e.target.value); setError(""); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} className={inp} />
-              </label>
-              <label className="flex items-center gap-2 text-xs text-slate-600">
-                <input type="checkbox" checked={ver} onChange={(e) => setVer(e.target.checked)} className="rounded" />
-                Mostrar la contraseña mientras escribo
-              </label>
-            </>
-          )}
+          <p className="text-sm text-slate-600 text-center">Escribe tu correo y contraseña para entrar.</p>
+          <label className="block text-xs font-semibold text-slate-600">Correo electrónico
+            <input type="email" value={email} autoFocus
+              onChange={(e) => { setEmail(e.target.value); setError(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} className={inp} />
+          </label>
+          <label className="block text-xs font-semibold text-slate-600">Contraseña
+            <div className="relative">
+              <input type={ver ? "text" : "password"} value={clave}
+                onChange={(e) => { setClave(e.target.value); setError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") entrar(); }}
+                className={inp + " pr-16"} />
+              <button type="button" onClick={() => setVer(!ver)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5 text-xs font-semibold text-slate-500 hover:text-slate-700">
+                {ver ? "Ocultar" : "Ver"}
+              </button>
+            </div>
+          </label>
 
           {error && <p className="text-sm text-red-600 font-semibold text-center">{error}</p>}
 
-          <button onClick={entrar}
-            className="w-full bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-bold rounded-lg px-4 py-2.5 text-sm shadow">
-            {hayClave ? "Entrar" : "Crear contraseña y entrar"}
+          <button onClick={entrar} disabled={cargando}
+            className="w-full bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-bold rounded-lg px-4 py-2.5 text-sm shadow disabled:opacity-60">
+            {cargando ? "Entrando…" : "Entrar"}
           </button>
-          {hayClave && (
-            <p className="text-[11px] text-slate-400 text-center">
-              La contraseña se cambia dentro de la aplicación, en la pestaña «Ajustes». Si se ha olvidado, quien tenga acceso a otro ordenador con la sesión abierta puede cambiarla desde allí.
-            </p>
-          )}
+          <p className="text-[11px] text-slate-400 text-center">
+            ¿No tienes acceso todavía? Pide a quien administre la aplicación que te cree un usuario desde el panel de Firebase (Authentication → Users).
+          </p>
         </div>
 
         {/* Información sobre la aplicación */}
@@ -4712,9 +4692,9 @@ function PantallaAcceso({ nombreClub, claveGuardada, onEntrar, onCrearClave }) {
                 <li><b>Taquilla y Publicidad</b>: recaudación de entradas y rifas por partido, y cartelería con IVA.</li>
                 <li><b>Socios y Cantera</b>: fichas con nº, DNI, localidad, género y teléfono; control de cuotas cobradas, parciales y pendientes.</li>
                 <li><b>Presupuesto e Informe</b>: presupuesto por categorías e informe imprimible para la asamblea.</li>
-                <li><b>Ajustes</b>: cuentas, categorías, precios de cuota, temporadas, contraseña de acceso y copias de seguridad (manual, automática a archivo, copias internas diarias y nube).</li>
+                <li><b>Ajustes</b>: cuentas, categorías, precios de cuota, temporadas, acceso y copias de seguridad (manual, automática a archivo, copias internas diarias y nube).</li>
               </ul>
-              <p className="text-zinc-400">Los datos se guardan automáticamente en este ordenador y, si la nube está configurada, se comparten entre ordenadores. El acceso está protegido con contraseña.</p>
+              <p className="text-zinc-400">Los datos se guardan automáticamente en la nube y se comparten entre todos los ordenadores. El acceso está protegido con usuario y contraseña reales (Firebase Authentication).</p>
             </div>
           )}
         </div>
@@ -4723,44 +4703,59 @@ function PantallaAcceso({ nombreClub, claveGuardada, onEntrar, onCrearClave }) {
   );
 }
 
-// Cambio de contraseña desde Ajustes
-function AjusteClave({ clave, onGuardar, setAviso }) {
-  const [actual, setActual] = useState("");
-  const [nueva, setNueva] = useState("");
-  const [repite, setRepite] = useState("");
-  const inp = "mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 text-sm font-normal";
-  const hayClave = Boolean(clave);
+// Puerta de acceso: comprueba si hay sesión iniciada antes de mostrar la aplicación.
+function AuthGate() {
+  const [estado, setEstado] = useState("comprobando"); // comprobando | fuera | dentro
+  const [userEmail, setUserEmail] = useState("");
 
-  const guardar = () => {
-    if (hayClave && actual !== clave) return setAviso("La contraseña actual no es correcta.");
-    if (nueva.trim().length < 4) return setAviso("La nueva contraseña debe tener al menos 4 caracteres.");
-    if (nueva !== repite) return setAviso("La nueva contraseña y su repetición no coinciden.");
-    onGuardar(nueva.trim());
-    setActual(""); setNueva(""); setRepite("");
-    setAviso("Contraseña de acceso actualizada. Se pedirá la próxima vez que se abra la aplicación.");
+  useEffect(() => {
+    if (!fbAuth) { setEstado("sinfirebase"); return; }
+    const unsub = fbAuth.onAuthStateChanged((user) => {
+      if (user) { setUserEmail(user.email); setEstado("dentro"); }
+      else { setEstado("fuera"); }
+    });
+    return () => unsub();
+  }, []);
+
+  if (estado === "comprobando") {
+    return <div className="min-h-screen bg-slate-100 flex items-center justify-center font-sans text-slate-500">Comprobando el acceso…</div>;
+  }
+  if (estado === "sinfirebase") {
+    return <div className="min-h-screen bg-slate-100 flex items-center justify-center font-sans text-red-600 text-center p-6">No se ha podido conectar con Firebase. Revisa la conexión a internet y recarga la página.</div>;
+  }
+  if (estado === "fuera") {
+    return <PantallaAcceso />;
+  }
+  return <TesoreriaClub userEmail={userEmail} onLogout={() => fbAuth.signOut()} />;
+}
+
+// Gestión de acceso desde Ajustes: ya no se guarda ninguna contraseña junto a los datos.
+// Los usuarios que pueden entrar se crean y se borran desde Firebase Authentication.
+function GestionAcceso({ userEmail, setAviso }) {
+  const [enviando, setEnviando] = useState(false);
+
+  const restablecer = () => {
+    if (!fbAuth || !fbAuth.currentUser) return;
+    setEnviando(true);
+    fbAuth.sendPasswordResetEmail(userEmail)
+      .then(() => setAviso("Te hemos enviado un correo a " + userEmail + " para elegir una nueva contraseña."))
+      .catch((err) => setAviso("No se ha podido enviar el correo: " + err.message))
+      .finally(() => setEnviando(false));
   };
 
   return (
     <div className="pt-2 border-t border-slate-200 space-y-2">
-      <h3 className="text-sm font-bold">Contraseña de acceso</h3>
-      <div className="grid sm:grid-cols-3 gap-3">
-        {hayClave && (
-          <label className="text-xs font-semibold text-slate-600">Contraseña actual
-            <input type="password" value={actual} onChange={(e) => setActual(e.target.value)} className={inp} />
-          </label>
-        )}
-        <label className="text-xs font-semibold text-slate-600">{hayClave ? "Nueva contraseña" : "Contraseña (mín. 4 caracteres)"}
-          <input type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} className={inp} />
-        </label>
-        <label className="text-xs font-semibold text-slate-600">Repite la nueva
-          <input type="password" value={repite} onChange={(e) => setRepite(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") guardar(); }} className={inp} />
-        </label>
-      </div>
-      <button onClick={guardar} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-semibold rounded-lg px-3 py-2 text-sm">
-        {hayClave ? "Cambiar contraseña" : "Establecer contraseña"}
+      <h3 className="text-sm font-bold">Acceso a la aplicación</h3>
+      <p className="text-xs text-slate-500">
+        Has entrado como <b>{userEmail}</b>. El acceso ya no se guarda junto a los datos del club: se gestiona con usuarios reales
+        en <b>Firebase Authentication</b> (correo + contraseña). Para dar de alta o de baja a alguien, entra en{" "}
+        <b>console.firebase.google.com</b> → tu proyecto → <b>Authentication → Users</b>.
+      </p>
+      <button onClick={restablecer} disabled={enviando}
+        className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-semibold rounded-lg px-3 py-2 text-sm disabled:opacity-60">
+        {enviando ? "Enviando…" : "Cambiar mi contraseña por correo"}
       </button>
-      <p className="text-xs text-slate-500">La aplicación pide esta contraseña cada vez que se abre. Cámbiala aquí cuando quieras; el cambio se guarda con el resto de los datos (y se comparte por la nube entre ordenadores).</p>
+      <p className="text-xs text-slate-500">Te llegará un correo a tu propia dirección con un enlace para elegir una contraseña nueva.</p>
     </div>
   );
 }
@@ -4779,7 +4774,7 @@ function NuevoItem({ onAdd, placeholder }) {
 }
 
 
-ReactDOM.createRoot(document.getElementById("root")).render(<TesoreriaClub />);
+ReactDOM.createRoot(document.getElementById("root")).render(<AuthGate />);
 
 </script>
 </body>
