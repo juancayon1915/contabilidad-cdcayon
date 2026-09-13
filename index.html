@@ -277,7 +277,8 @@ const esTemporadaValida = (t) => {
 const mesKey = (f) => f.slice(0, 7);
 const mesLabel = (k) => { const [y, m] = k.split("-"); return `${MESES[parseInt(m, 10) - 1]} ${y}`; };
 const fmtFecha = (f) => f.split("-").reverse().join("/");
-const uid = (p) => `${p}${Date.now()}${Math.floor(Math.random() * 1000)}`;
+let _uidSeq = 0;
+const uid = (p) => `${p}${Date.now()}${String((_uidSeq = (_uidSeq + 1) % 1000)).padStart(3, "0")}`;
 const nombreCompleto = (p) => [p.nombre, p.apellidos].filter(Boolean).join(" ").trim();
 const apellidosNombre = (p) => (p.apellidos ? `${p.apellidos}, ${p.nombre}` : p.nombre);
 
@@ -866,6 +867,25 @@ function TesoreriaClub({ userEmail, onLogout }) {
   const cuentas = data ? data.cuentas : [];
   const cuentaNombre = useCallback((id) => cuentas.find((c) => c.id === id)?.nombre || "—", [cuentas]);
 
+  // Los movimientos nuevos siempre se añaden al final del array (nunca se
+  // reordena al guardar), así que la posición dentro de "movs" refleja
+  // fielmente el orden en que se fueron anotando. Antes se deshacía el
+  // empate de fecha comparando el "id" (que lleva una parte aleatoria), lo
+  // que a veces mezclaba movimientos de la misma fecha en un orden que no
+  // coincidía con el de entrada. Usamos este mapa para respetar siempre el
+  // orden real de introducción cuando dos movimientos comparten fecha.
+  const idxMovs = useMemo(() => {
+    const map = new Map();
+    movs.forEach((m, i) => map.set(m.id, i));
+    return map;
+  }, [movs]);
+  const compararMovs = useCallback((a, b, asc = false) => {
+    if (a.fecha !== b.fecha) return asc ? (a.fecha < b.fecha ? -1 : 1) : (a.fecha < b.fecha ? 1 : -1);
+    const ia = idxMovs.has(a.id) ? idxMovs.get(a.id) : 0;
+    const ib = idxMovs.has(b.id) ? idxMovs.get(b.id) : 0;
+    return asc ? ia - ib : ib - ia;
+  }, [idxMovs]);
+
   const saldos = useMemo(() => {
     const s = {};
     for (const c of cuentas) s[c.id] = num(c.saldoInicial);
@@ -915,6 +935,39 @@ function TesoreriaClub({ userEmail, onLogout }) {
   }, [movs, data]);
 
   const tempActiva = tempSel === "actual" ? temporadaDe(hoyISO()) : tempSel;
+
+  // Ajuste opcional del informe de esta temporada: permite empezar a contar
+  // a partir de un mes concreto (p. ej. agosto en vez de julio) con un saldo
+  // de partida propio, para dejar fuera del informe movimientos de bancarios
+  // ajenos al club que se colaron al principio de temporada.
+  const ajusteInforme = (data?.temporadaAjustes && data.temporadaAjustes[tempActiva]) || {};
+  const mesesDeTemporadaActiva = useMemo(() => {
+    const m = /^(\d{4})\/(\d{4})$/.exec(tempActiva);
+    if (!m) return [];
+    const y1 = Number(m[1]);
+    const arr = [];
+    for (let i = 0; i < 12; i++) {
+      const mm = ((6 + i) % 12) + 1;
+      const yy = mm >= 7 ? y1 : y1 + 1;
+      arr.push(`${yy}-${String(mm).padStart(2, "0")}`);
+    }
+    return arr;
+  }, [tempActiva]);
+
+  const guardarAjusteInforme = (campo, valor) => {
+    persist({
+      ...data,
+      temporadaAjustes: {
+        ...(data.temporadaAjustes || {}),
+        [tempActiva]: { ...ajusteInforme, [campo]: valor },
+      },
+    });
+  };
+
+  // IMPORTANTE: movsTemporada incluye TODOS los movimientos de la temporada
+  // (nunca se descarta ninguno de los totales). El ajuste de mes de inicio
+  // solo se usa más abajo para recolocar el punto de partida de la columna
+  // "Acumulado", no para excluir ingresos o gastos ya anotados.
   const movsTemporada = useMemo(() => movs.filter((m) => temporadaDe(m.fecha) === tempActiva), [movs, tempActiva]);
 
   const informeMensual = useMemo(() => {
@@ -925,13 +978,18 @@ function TesoreriaClub({ userEmail, onLogout }) {
       if (!map[k]) map[k] = { ingresos: 0, gastos: 0 };
       m.tipo === "ingreso" ? (map[k].ingresos += num(m.importe)) : (map[k].gastos += num(m.importe));
     }
+    const desde = ajusteInforme.mesInicio || null;
     let acum = 0;
     return Object.keys(map).sort().map((k) => {
       const r = map[k].ingresos - map[k].gastos;
-      acum += r;
+      // Al llegar al mes elegido como punto de partida, el acumulado se
+      // "reengancha" al saldo real conocido en ese momento; antes y después
+      // de ese mes, los ingresos y gastos de cada mes siguen contando igual
+      // en las demás columnas y en el total de la temporada.
+      acum = (desde && k === desde) ? num(ajusteInforme.saldoPartida) + r : acum + r;
       return { mes: k, ...map[k], resultado: r, acumulado: acum };
     });
-  }, [movsTemporada]);
+  }, [movsTemporada, ajusteInforme.mesInicio, ajusteInforme.saldoPartida]);
 
   const porCategoria = useMemo(() => {
     const ing = {}, gas = {};
@@ -975,8 +1033,8 @@ function TesoreriaClub({ userEmail, onLogout }) {
         if (filtro.texto && !(`${m.concepto} ${m.categoria} ${m.empresa || ""}`.toLowerCase().includes(filtro.texto.toLowerCase()))) return false;
         return true;
       })
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)));
-  }, [movs, filtro]);
+      .sort((a, b) => compararMovs(a, b, false));
+  }, [movs, filtro, compararMovs]);
 
   // Nota: el detalle de quién ha pagado cada cuota ya no vive en
   // «movimientos» (ahí solo hay un asiento agregado por mes y por
@@ -1358,7 +1416,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
   // ---------- exportar / reiniciar ----------
   const exportarCSV = () => {
     const filas = [["Fecha", "Tipo", "Categoría", "Concepto", "Cuenta", "Destino", "Forma de pago", "Importe"]];
-    [...movs].sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : (a.id > b.id ? 1 : -1))).forEach((m) =>
+    [...movs].sort((a, b) => compararMovs(a, b, true)).forEach((m) =>
       filas.push([m.fecha, m.tipo, m.categoria, m.concepto, cuentaNombre(m.cuentaId),
         m.destinoId ? cuentaNombre(m.destinoId) : "", m.forma || "", String(m.importe).replace(".", ",")]));
     const csv = filas.map((f) => f.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
@@ -1455,7 +1513,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
   void iniciales;
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-100 font-sans text-slate-800 app-shell">
       {/* Cabecera */}
       <header className="bg-gradient-to-r from-zinc-950 via-zinc-900 to-black text-white border-b-4 border-amber-400 shadow-lg">
         <div className={`${anchoMax} mx-auto px-4 pt-6 pb-0`}>
@@ -1720,7 +1778,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
-                  {[...movs].sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (a.id < b.id ? 1 : -1))).slice(0, 8).map((m) => (
+                  {[...movs].sort((a, b) => compararMovs(a, b, false)).slice(0, 8).map((m) => (
                     <li key={m.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
                       <span className="text-slate-500 tabular-nums w-20 shrink-0">{fmtFecha(m.fecha)}</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${chip(m.tipo)}`}>{m.tipo}</span>
@@ -2067,6 +2125,42 @@ function TesoreriaClub({ userEmail, onLogout }) {
               <h2 className="font-bold text-lg mr-auto">Resultados de la temporada {tempActiva}</h2>
               <button onClick={imprimirInforme} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-semibold rounded-lg px-3 py-2 text-sm">Imprimir informe</button>
               <button onClick={exportarCSV} className="border border-zinc-900 text-zinc-900 hover:bg-amber-50 font-semibold rounded-lg px-3 py-2 text-sm">Exportar CSV</button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2">
+              <h3 className="font-bold text-sm">Ajustar el inicio del informe de esta temporada</h3>
+              <p className="text-xs text-slate-600">
+                Esto no quita ningún ingreso o gasto de los totales de la temporada: todo lo que has anotado sigue
+                sumando igual en «Ingresos», «Gastos» y en el total. Solo sirve para corregir la columna
+                «Acumulado»: si en julio hubo lío en la cuenta y el acumulado calculado no coincide con el saldo
+                real del banco, elige aquí el mes (por ejemplo agosto) y el saldo real que había en ese momento, y
+                a partir de ese mes el acumulado seguirá contando desde ese número correcto.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-xs font-semibold text-slate-600">Reenganchar el acumulado a partir de
+                  <select
+                    value={ajusteInforme.mesInicio || ""}
+                    onChange={(e) => guardarAjusteInforme("mesInicio", e.target.value || null)}
+                    className="mt-1 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                    <option value="">Sin ajuste (acumulado normal desde julio)</option>
+                    {mesesDeTemporadaActiva.map((k) => (
+                      <option key={k} value={k}>{mesLabel(k)}</option>
+                    ))}
+                  </select>
+                </label>
+                {ajusteInforme.mesInicio && (
+                  <label className="text-xs font-semibold text-slate-600">Saldo real en ese mes (€)
+                    <input inputMode="decimal" placeholder="0,00"
+                      value={ajusteInforme.saldoPartida ?? ""}
+                      onChange={(e) => guardarAjusteInforme("saldoPartida", e.target.value.replace(",", "."))}
+                      className="mt-1 block border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-32 tabular-nums" />
+                  </label>
+                )}
+                {ajusteInforme.mesInicio && (
+                  <button onClick={() => guardarAjusteInforme("mesInicio", null)}
+                    className="text-xs font-semibold text-amber-800 hover:underline">Quitar el ajuste</button>
+                )}
+              </div>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
@@ -2422,7 +2516,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
         const grupos = ctasImprimir.map((c) => {
           const rel = printData.filas
             .filter((m) => m.cuentaId === c.id || m.destinoId === c.id)
-            .sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : (a.id > b.id ? 1 : a.id < b.id ? -1 : 0)))
+            .sort((a, b) => compararMovs(a, b, true))
             .map((m) => {
               let delta = 0;
               if (m.tipo === "ingreso") delta = num(m.importe);
@@ -2666,10 +2760,17 @@ function TesoreriaClub({ userEmail, onLogout }) {
       <style>{`
         .solo-imprimir { display: none; }
         @media print {
+          /* Antes se ocultaba con "body * { visibility: hidden }", que obliga
+             al navegador a recalcular estilo y a mantener en el árbol de
+             renderizado TODOS los elementos de la aplicación (tablas, listas
+             de socios, gráficas...) aunque no se vean, y eso es lo que hacía
+             tardar tanto al pulsar "Imprimir". Ocultando solo los bloques de
+             primer nivel con "display: none" (que sí saca a esos elementos
+             del árbol de renderizado) el navegador tiene mucho menos que
+             procesar y el diálogo de impresión aparece al instante. */
           body { background: white !important; }
-          body * { visibility: hidden; }
+          .app-shell > *:not(.solo-imprimir) { display: none !important; }
           .solo-imprimir { display: block !important; position: absolute; top: 0; left: 0; width: 100%; }
-          .solo-imprimir, .solo-imprimir * { visibility: visible; }
         }
       `}</style>
 
@@ -3451,9 +3552,15 @@ function PanelCaja({ cuentas, movs, saldos, cuentaNombre, categorias, anotarRapi
 
   const filas = useMemo(() => {
     if (!idCaja) return [];
+    // El orden de entrada de los movimientos es el propio orden del array
+    // (los nuevos siempre se añaden al final), así que lo usamos para
+    // deshacer los empates de fecha en vez del "id" (que llevaba una parte
+    // aleatoria y podía mezclar movimientos del mismo día).
+    const idx = new Map();
+    movs.forEach((m, i) => idx.set(m.id, i));
     const rel = movs
       .filter((m) => m.cuentaId === idCaja || m.destinoId === idCaja)
-      .sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : a.id > b.id ? 1 : -1));
+      .sort((a, b) => (a.fecha !== b.fecha ? (a.fecha < b.fecha ? -1 : 1) : (idx.get(a.id) ?? 0) - (idx.get(b.id) ?? 0)));
     let s = num(caja.saldoInicial);
     const out = rel.map((m) => {
       let delta = 0;
