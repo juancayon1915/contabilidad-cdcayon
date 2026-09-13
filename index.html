@@ -975,7 +975,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
         if (filtro.texto && !(`${m.concepto} ${m.categoria} ${m.empresa || ""}`.toLowerCase().includes(filtro.texto.toLowerCase()))) return false;
         return true;
       })
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)));
   }, [movs, filtro]);
 
   // Nota: el detalle de quién ha pagado cada cuota ya no vive en
@@ -1119,18 +1119,27 @@ function TesoreriaClub({ userEmail, onLogout }) {
     setAviso(`${n} movimiento${n === 1 ? "" : "s"} borrado${n === 1 ? "" : "s"}.`);
   };
 
+  // Antes había una espera fija de 350ms "a ciegas" antes de abrir el
+  // diálogo de impresión, lo que se notaba como una tardanza. Con
+  // requestAnimationFrame esperamos solo lo justo para que React haya
+  // pintado la hoja de impresión (uno o dos frames) y lanzamos el
+  // diálogo en cuanto está lista, sin demora artificial.
+  const lanzarImpresion = () => {
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+  };
+
   const imprimirMovs = () => {
     const filas = selec.length > 0 ? movsFiltrados.filter((m) => selec.includes(m.id)) : movsFiltrados;
     if (filas.length === 0) return setAviso("No hay movimientos que imprimir con los filtros actuales.");
     setPrintData({ filas, cuentaFiltro: filtro.cuenta, mesFiltro: filtro.mes, soloSeleccion: selec.length > 0 });
-    setTimeout(() => window.print(), 350);
+    lanzarImpresion();
   };
 
   // Informe de temporada con formato limpio para la asamblea o la junta directiva
   const imprimirInforme = () => {
     if (informeMensual.length === 0) return setAviso(`Sin movimientos en la temporada ${tempActiva}: no hay nada que imprimir.`);
     setPrintData({ informe: true });
-    setTimeout(() => window.print(), 350);
+    lanzarImpresion();
   };
 
   // ---------- conciliación bancaria ----------
@@ -1349,7 +1358,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
   // ---------- exportar / reiniciar ----------
   const exportarCSV = () => {
     const filas = [["Fecha", "Tipo", "Categoría", "Concepto", "Cuenta", "Destino", "Forma de pago", "Importe"]];
-    [...movs].sort((a, b) => (a.fecha > b.fecha ? 1 : -1)).forEach((m) =>
+    [...movs].sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : (a.id > b.id ? 1 : -1))).forEach((m) =>
       filas.push([m.fecha, m.tipo, m.categoria, m.concepto, cuentaNombre(m.cuentaId),
         m.destinoId ? cuentaNombre(m.destinoId) : "", m.forma || "", String(m.importe).replace(".", ",")]));
     const csv = filas.map((f) => f.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
@@ -1711,7 +1720,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
-                  {[...movs].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 8).map((m) => (
+                  {[...movs].sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (a.id < b.id ? 1 : -1))).slice(0, 8).map((m) => (
                     <li key={m.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
                       <span className="text-slate-500 tabular-nums w-20 shrink-0">{fmtFecha(m.fecha)}</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${chip(m.tipo)}`}>{m.tipo}</span>
@@ -2413,7 +2422,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
         const grupos = ctasImprimir.map((c) => {
           const rel = printData.filas
             .filter((m) => m.cuentaId === c.id || m.destinoId === c.id)
-            .sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : 0))
+            .sort((a, b) => (a.fecha > b.fecha ? 1 : a.fecha < b.fecha ? -1 : (a.id > b.id ? 1 : a.id < b.id ? -1 : 0)))
             .map((m) => {
               let delta = 0;
               if (m.tipo === "ingreso") delta = num(m.importe);
