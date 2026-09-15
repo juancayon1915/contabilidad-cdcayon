@@ -1289,6 +1289,27 @@ function TesoreriaClub({ userEmail, onLogout }) {
     setAviso(`Pago registrado. Se suma al asiento mensual de ${refTipo === "socio" ? "socios" : "cantera"} de ${grupo} — ${mesLabel(mes)}.`);
   };
 
+  // Modifica un pago de cuota ya registrado (importe, forma, fecha o
+  // cuenta) sin necesidad de borrarlo y volver a anotarlo. Se
+  // recalcula el asiento mensual de origen y, si el pago cambia de
+  // mes o de cuenta, también el asiento de destino.
+  const actualizarPagoCuota = (pagoId, cambios) => {
+    const actual = pagosCuota.find((p) => p.id === pagoId);
+    if (!actual) return;
+    const imp = num(cambios.importe);
+    if (imp <= 0) return setAviso("Escribe un importe mayor que cero.");
+    if (!cambios.cuentaId) return setAviso("Elige la cuenta donde entra el dinero.");
+    const mes = mesKey(cambios.fecha);
+    const actualizado = { ...actual, fecha: cambios.fecha, importe: imp, cuentaId: cambios.cuentaId, forma: cambios.forma, mes };
+    const nuevosPagosCuota = pagosCuota.map((p) => (p.id === pagoId ? actualizado : p));
+    let movimientos = sincronizarAsientoCuota(movs, nuevosPagosCuota, actual.refTipo, actual.grupo, actual.mes, actual.cuentaId);
+    if (actual.mes !== mes || actual.cuentaId !== cambios.cuentaId) {
+      movimientos = sincronizarAsientoCuota(movimientos, nuevosPagosCuota, actualizado.refTipo, actualizado.grupo, mes, cambios.cuentaId);
+    }
+    persist({ ...data, pagosCuota: nuevosPagosCuota, movimientos });
+    setAviso("Pago actualizado; el asiento mensual se ha actualizado.");
+  };
+
   // Elimina un pago individual y recalcula (o retira) el asiento
   // mensual agregado al que pertenecía.
   const borrarPagoCuota = (pagoId) => {
@@ -2089,7 +2110,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
             tempActiva={tempActiva}
             pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
             pagosCuota={pagosCuota.filter((p) => p.refTipo === "socio")}
-            registrarPago={registrarPago} borrarPago={borrarPagoCuota}
+            registrarPago={registrarPago} borrarPago={borrarPagoCuota} actualizarPago={actualizarPagoCuota}
             onGuardar={(lista) => persist({ ...data, socios: lista })}
             setAviso={setAviso}
           />
@@ -2103,7 +2124,7 @@ function TesoreriaClub({ userEmail, onLogout }) {
             tempActiva={tempActiva}
             pagadoPor={pagadoPor} pagosDe={pagosDe} cuentaNombre={cuentaNombre}
             pagosCuota={pagosCuota.filter((p) => p.refTipo === "jugador")}
-            registrarPago={registrarPago} borrarPago={borrarPagoCuota}
+            registrarPago={registrarPago} borrarPago={borrarPagoCuota} actualizarPago={actualizarPagoCuota}
             onGuardar={(lista) => persist({ ...data, jugadores: lista })}
             setAviso={setAviso}
           />
@@ -4042,7 +4063,7 @@ function PanelCuentas({ data, persist, saldos, setAviso }) {
 // Panel compartido de cuotas: Socios y Cantera
 // ==================================================================
 function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, tempActiva,
-  pagadoPor, pagosDe, cuentaNombre, pagosCuota, registrarPago, borrarPago, onGuardar, setAviso }) {
+  pagadoPor, pagosDe, cuentaNombre, pagosCuota, registrarPago, borrarPago, actualizarPago, onGuardar, setAviso }) {
 
   const esSocio = modo === "socio";
   const refTipo = esSocio ? "socio" : "jugador";
@@ -4110,14 +4131,21 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
     setAviso(editandoId ? "Ficha actualizada." : (esSocio ? `Socio nº ${numeroSocio(persona)} dado de alta.` : "Jugador dado de alta."));
   };
 
+  // Al editar una ficha, el formulario se abre en línea, justo sobre
+  // la propia fila de esa persona en la tabla (igual que al editar un
+  // movimiento), en vez de subir hasta el formulario de arriba de
+  // todo. Así se ve junto a su estado de pago, para poder corregirlo
+  // sin tener que buscarlo de nuevo.
   const editarPersona = (p) => {
     setEditandoId(p.id);
+    setAbierto(p.id);
     setAlta(esSocio
       ? { numero: p.numero, nombre: p.nombre, apellidos: p.apellidos || "", categoria: p.categoria || "", telefono: p.telefono || "",
           dni: p.dni || "", localidad: p.localidad || "", genero: p.genero || "", cuota: String(p.cuota || "") }
       : { nombre: p.nombre, apellidos: p.apellidos || "", equipo: p.equipo, cuota: String(p.cuota || "") });
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const cancelarEdicionPersona = () => { setEditandoId(null); setAlta(vacio()); };
 
   const quitarPersona = (p) => {
     onGuardar(personas.filter((x) => x.id !== p.id));
@@ -4380,8 +4408,9 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
         </div>
       )}
 
+      {!editandoId && (
       <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <h3 className="font-bold mb-3">{editandoId ? "Editar ficha" : (esSocio ? "Alta de socio" : "Alta de jugador")}</h3>
+        <h3 className="font-bold mb-3">{esSocio ? "Alta de socio" : "Alta de jugador"}</h3>
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           {esSocio ? (
             <label className="text-xs font-semibold text-slate-600">Nº socio{ETIQUETA_SERIE[serieDeCategoria(alta.categoria)] ? ` (${ETIQUETA_SERIE[serieDeCategoria(alta.categoria)]})` : ""}
@@ -4440,21 +4469,18 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
           </label>
           <div className="flex items-end gap-2 col-span-2">
             <button onClick={guardarPersona} className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-semibold rounded-lg px-4 py-2 text-sm">
-              {editandoId ? "Guardar" : "Dar de alta"}
+              Dar de alta
             </button>
-            {editandoId && (
-              <button onClick={() => { setEditandoId(null); setAlta(vacio()); }}
-                className="border border-slate-300 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">Cancelar</button>
-            )}
           </div>
         </div>
         {esSocio && (
           <p className="text-xs text-slate-500 mt-2">
-            {!editandoId && <>El nº de socio se asigna correlativamente dentro de su tipo ({sigNumeroDe(alta.categoria)} es el siguiente libre{ETIQUETA_SERIE[serieDeCategoria(alta.categoria)] ? ` de ${ETIQUETA_SERIE[serieDeCategoria(alta.categoria)]}` : ""}), pero puedes cambiarlo. Los socios de Empresa y de Honor llevan numeración propia, separada del resto (nº 1 Empresa, nº 1 Honor…). </>}
+            El nº de socio se asigna correlativamente dentro de su tipo ({sigNumeroDe(alta.categoria)} es el siguiente libre{ETIQUETA_SERIE[serieDeCategoria(alta.categoria)] ? ` de ${ETIQUETA_SERIE[serieDeCategoria(alta.categoria)]}` : ""}), pero puedes cambiarlo. Los socios de Empresa y de Honor llevan numeración propia, separada del resto (nº 1 Empresa, nº 1 Honor…).
             Al elegir la categoría, la cuota se rellena con su precio (Adulto 100 €, Jubilado 50 €, Joven 30 €, Juvenil 20 €, Baby 10 €…), y puedes ajustarla para casos concretos. Los precios se cambian en Ajustes.
           </p>
         )}
       </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200">
         <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap gap-2 items-center">
@@ -4532,7 +4558,8 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
                 const pagado = pagadoPor(refTipo, p.id);
                 const pendiente = Math.max(0, num(p.cuota) - pagado);
                 const [txt, cls] = pillEstado(estadoDe(p));
-                const abiertoEste = abierto === p.id;
+                const editandoEste = editandoId === p.id;
+                const abiertoEste = abierto === p.id || editandoEste;
                 return (
                   <FragmentoPersona key={p.id}
                     p={p} esSocio={esSocio} pagado={pagado} pendiente={pendiente} txt={txt} cls={cls}
@@ -4540,6 +4567,11 @@ function PanelCuotas({ modo, titulo, personas, equipos, catSocios, cuentas, temp
                     abrirPago={abrirPago} editarPersona={editarPersona} quitarPersona={quitarPersona}
                     pagos={abiertoEste ? pagosDe(refTipo, p.id) : []}
                     cuentaNombre={cuentaNombre} borrarPago={borrarPago} tempActiva={tempActiva}
+                    editandoEste={editandoEste} alta={alta} setAlta={setAlta}
+                    catSocios={catSocios} equipos={equipos} elegirCategoria={elegirCategoria}
+                    sigNumeroDe={sigNumeroDe} guardarPersona={guardarPersona}
+                    cancelarEdicionPersona={cancelarEdicionPersona} inp={inp} sel={sel}
+                    cuentas={cuentas} actualizarPago={actualizarPago} pillEstado={pillEstado} estadoDe={estadoDe}
                   />
                 );
               })}
@@ -4700,7 +4732,8 @@ function VistaCobrosPorMes({ esSocio, refTipo, tempActiva, pagosCuota, cuentaNom
   );
 }
 
-function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste, setAbierto, abrirPago, editarPersona, quitarPersona, pagos, cuentaNombre, borrarPago, tempActiva }) {
+function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste, setAbierto, abrirPago, editarPersona, quitarPersona, pagos, cuentaNombre, borrarPago, tempActiva,
+  editandoEste, alta, setAlta, catSocios, equipos, elegirCategoria, sigNumeroDe, guardarPersona, cancelarEdicionPersona, inp, sel, cuentas, actualizarPago, pillEstado, estadoDe }) {
   const cols = esSocio ? 12 : 7;
   // Socios de Empresa y de Honor se distinguen visualmente del resto:
   // fila con fondo de color y la categoría como etiqueta con icono.
@@ -4747,12 +4780,21 @@ function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste
         <td className="px-2 py-2"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>{txt}</span></td>
         <td className="px-2 py-2 whitespace-nowrap text-right">
           <button onClick={() => abrirPago(p)} className="bg-zinc-900 hover:bg-zinc-800 text-amber-300 rounded-lg px-2.5 py-1 text-xs font-semibold mr-2">+ Pago</button>
-          <button onClick={() => setAbierto(abiertoEste ? null : p.id)} className="text-slate-500 hover:underline text-xs font-semibold mr-2">{abiertoEste ? "Ocultar" : "Pagos"}</button>
-          <button onClick={() => editarPersona(p)} className="text-amber-700 hover:underline text-xs font-semibold mr-2">Editar</button>
+          {!editandoEste && (
+            <button onClick={() => setAbierto(abiertoEste ? null : p.id)} className="text-slate-500 hover:underline text-xs font-semibold mr-2">{abiertoEste ? "Ocultar" : "Pagos"}</button>
+          )}
+          <button onClick={() => (editandoEste ? cancelarEdicionPersona() : editarPersona(p))} className="text-amber-700 hover:underline text-xs font-semibold mr-2">{editandoEste ? "Cerrar" : "Editar"}</button>
           <button onClick={() => quitarPersona(p)} className="text-red-600 hover:underline text-xs font-semibold">Quitar</button>
         </td>
       </tr>
-      {abiertoEste && (
+      {editandoEste && (
+        <EditorPersonaInline p={p} esSocio={esSocio} alta={alta} setAlta={setAlta} catSocios={catSocios} equipos={equipos}
+          elegirCategoria={elegirCategoria} sigNumeroDe={sigNumeroDe} guardarPersona={guardarPersona}
+          cancelarEdicionPersona={cancelarEdicionPersona} inp={inp} sel={sel} cuentas={cuentas} cuentaNombre={cuentaNombre}
+          pagos={pagos} actualizarPago={actualizarPago} borrarPago={borrarPago} tempActiva={tempActiva}
+          pillEstado={pillEstado} estadoDe={estadoDe} cols={cols} />
+      )}
+      {abiertoEste && !editandoEste && (
         <tr className="bg-slate-50">
           <td colSpan={cols} className="px-6 py-3">
             {pagos.length === 0 ? (
@@ -4774,6 +4816,144 @@ function FragmentoPersona({ p, esSocio, pagado, pendiente, txt, cls, abiertoEste
         </tr>
       )}
     </>
+  );
+}
+
+// ==================================================================
+// Editor en línea de una ficha (socio o jugador): se abre como una
+// fila extra justo debajo de la persona que se está editando, igual
+// que al editar un movimiento. Además de los datos de la ficha,
+// muestra su estado de cobro (pagado / parcial / pendiente) y, si ya
+// tiene pagos anotados esta temporada, permite corregir el importe,
+// la forma de pago, la fecha o la cuenta de cada uno sin tener que
+// borrarlo y volver a registrarlo.
+// ==================================================================
+function EditorPersonaInline({ p, esSocio, alta, setAlta, catSocios, equipos, elegirCategoria, sigNumeroDe,
+  guardarPersona, cancelarEdicionPersona, inp, sel, cuentas, cuentaNombre, pagos, actualizarPago, borrarPago,
+  tempActiva, pillEstado, estadoDe, cols }) {
+  const [txtEstado, clsEstado] = pillEstado(estadoDe(p));
+  return (
+    <tr className="bg-amber-50">
+      <td colSpan={cols} className="px-4 py-3">
+        <div className="rounded-lg border border-amber-300 bg-white p-3 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="text-xs font-bold text-amber-800">Editar ficha</div>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${clsEstado}`}>{txtEstado}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+            {esSocio ? (
+              <label className="text-xs font-semibold text-slate-600">Nº socio
+                <input inputMode="numeric" value={alta.numero}
+                  onChange={(e) => setAlta({ ...alta, numero: e.target.value })} className={inp + " tabular-nums"} />
+              </label>
+            ) : (
+              <label className="text-xs font-semibold text-slate-600">Equipo
+                <select value={alta.equipo} onChange={(e) => setAlta({ ...alta, equipo: e.target.value })} className={sel}>
+                  {equipos.map((eq) => <option key={eq} value={eq}>{eq}</option>)}
+                </select>
+              </label>
+            )}
+            <label className="col-span-1 sm:col-span-2 text-xs font-semibold text-slate-600">Nombre
+              <input value={alta.nombre} onChange={(e) => setAlta({ ...alta, nombre: e.target.value })} className={inp} />
+            </label>
+            <label className="col-span-1 sm:col-span-3 text-xs font-semibold text-slate-600">Apellidos
+              <input value={alta.apellidos} onChange={(e) => setAlta({ ...alta, apellidos: e.target.value })} className={inp} />
+            </label>
+            {esSocio && (
+              <label className="col-span-1 sm:col-span-2 text-xs font-semibold text-slate-600">DNI
+                <input value={alta.dni} placeholder="00000000A" maxLength={12}
+                  onChange={(e) => setAlta({ ...alta, dni: e.target.value })} className={inp + " uppercase"} />
+              </label>
+            )}
+            {esSocio && (
+              <label className="col-span-1 sm:col-span-2 text-xs font-semibold text-slate-600">Localidad
+                <input value={alta.localidad} onChange={(e) => setAlta({ ...alta, localidad: e.target.value })} className={inp} />
+              </label>
+            )}
+            {esSocio && (
+              <label className="col-span-2 sm:col-span-2 text-xs font-semibold text-slate-600">Género
+                <select value={alta.genero} onChange={(e) => setAlta({ ...alta, genero: e.target.value })} className={sel}>
+                  <option value="">— Sin indicar —</option>
+                  <option value="Masculino">Masculino</option>
+                  <option value="Femenino">Femenino</option>
+                </select>
+              </label>
+            )}
+            {esSocio && (
+              <label className="col-span-1 sm:col-span-2 text-xs font-semibold text-slate-600">Categoría de socio
+                <select value={alta.categoria} onChange={(e) => elegirCategoria(e.target.value)} className={sel}>
+                  <option value="">— Sin categoría —</option>
+                  {catSocios.map((c) => <option key={c.nombre} value={c.nombre}>{c.nombre} — {eur(c.cuota)}</option>)}
+                </select>
+              </label>
+            )}
+            {esSocio && (
+              <label className="text-xs font-semibold text-slate-600">Teléfono (opcional)
+                <input inputMode="tel" value={alta.telefono} onChange={(e) => setAlta({ ...alta, telefono: e.target.value })} className={inp} />
+              </label>
+            )}
+            <label className="text-xs font-semibold text-slate-600">Cuota temporada (€)
+              <input inputMode="decimal" placeholder="0,00" value={alta.cuota}
+                onChange={(e) => setAlta({ ...alta, cuota: e.target.value })} className={inp + " tabular-nums"} />
+            </label>
+            <div className="flex items-end gap-2 col-span-2">
+              <button onClick={guardarPersona} className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-amber-300 font-semibold rounded-lg px-4 py-2 text-sm">Guardar</button>
+              <button onClick={cancelarEdicionPersona} className="border border-slate-300 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 pt-3">
+            <div className="text-xs font-bold text-slate-700 mb-2">Pagos de la temporada {tempActiva}</div>
+            {pagos.length === 0 ? (
+              <p className="text-xs text-slate-500">Sin pagos registrados esta temporada. Usa el botón «+ Pago» de la fila para anotar uno.</p>
+            ) : (
+              <div className="space-y-2">
+                {pagos.map((m) => (
+                  <FilaPagoEditable key={m.id} m={m} cuentas={cuentas} inp={inp} sel={sel}
+                    actualizarPago={actualizarPago} borrarPago={borrarPago} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// Fila editable de un pago ya registrado: permite corregir la fecha,
+// el importe, la cuenta o la forma de pago de un pago concreto (por
+// ejemplo, si al anotarlo se eligió mal la forma de pago o se
+// escribió una cantidad equivocada) sin borrarlo y volver a anotarlo.
+function FilaPagoEditable({ m, cuentas, inp, sel, actualizarPago, borrarPago }) {
+  const [f, setF] = useState({ fecha: m.fecha, importe: String(m.importe).replace(".", ","), cuentaId: m.cuentaId, forma: m.forma || "Otro" });
+  const cambiado = f.fecha !== m.fecha || num(f.importe) !== num(m.importe) || f.cuentaId !== m.cuentaId || f.forma !== (m.forma || "Otro");
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end bg-slate-50 border border-slate-200 rounded-lg p-2">
+      <label className="text-[11px] font-semibold text-slate-500">Fecha
+        <input type="date" value={f.fecha} onChange={(e) => setF({ ...f, fecha: e.target.value })} className={inp} />
+      </label>
+      <label className="text-[11px] font-semibold text-slate-500">Importe (€)
+        <input inputMode="decimal" value={f.importe} onChange={(e) => setF({ ...f, importe: e.target.value })} className={inp + " tabular-nums"} />
+      </label>
+      <label className="text-[11px] font-semibold text-slate-500">Cuenta
+        <select value={f.cuentaId} onChange={(e) => setF({ ...f, cuentaId: e.target.value })} className={sel}>
+          {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </select>
+      </label>
+      <label className="text-[11px] font-semibold text-slate-500">Forma de pago
+        <select value={f.forma} onChange={(e) => setF({ ...f, forma: e.target.value })} className={sel}>
+          {FORMAS.map((forma) => <option key={forma} value={forma}>{forma}</option>)}
+        </select>
+      </label>
+      <div className="flex gap-2">
+        <button onClick={() => actualizarPago(m.id, f)} disabled={!cambiado}
+          className={`flex-1 rounded-lg px-2.5 py-2 text-xs font-semibold ${cambiado ? "bg-zinc-900 hover:bg-zinc-800 text-amber-300" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
+          Guardar
+        </button>
+        <button onClick={() => borrarPago(m.id)} className="text-red-500 hover:underline text-xs font-semibold">Borrar</button>
+      </div>
+    </div>
   );
 }
 
