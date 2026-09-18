@@ -48,6 +48,10 @@ nav.tabs button{background:transparent;border:none;color:#c3c9d6;padding:13px 18
 nav.tabs button:hover{color:#fff;}
 nav.tabs button.active{color:var(--accent);border-bottom-color:var(--accent);}
 
+.subnavbtn{background:transparent;border:none;color:var(--muted);padding:9px 4px;margin-right:22px;font-size:14px;font-weight:700;border-bottom:3px solid transparent;margin-bottom:-1px;}
+.subnavbtn:hover{color:var(--text);}
+.subnavbtn.active{color:var(--blue);border-bottom-color:var(--blue);}
+
 main{padding:22px;max-width:1500px;margin:0 auto;}
 .tabpanel{display:none;}
 .tabpanel.active{display:block;}
@@ -196,6 +200,37 @@ const EQUIPOS_CANTERA = ["Juvenil A","Juvenil B","Cadete A","Cadete B","Cadete C
 const CATEGORIAS_SOCIO = ["Adulto","Jubilado","Joven","Juvenil","Baby","Empresa","Honor","Simpatizante","Obsequio"];
 function categoriaSocioOptions(sel){ return CATEGORIAS_SOCIO.map(c=>`<option value="${c}" ${c===sel?'selected':''}>${c}</option>`).join(''); }
 
+/* ---------- Temporadas / número de socio ---------- */
+function temporadaDefault(){
+  const d = new Date(); const y = d.getFullYear();
+  // De julio en adelante consideramos que ya estamos en la temporada Y/Y+1
+  return d.getMonth()>=6 ? `${y}/${y+1}` : `${y-1}/${y}`;
+}
+function temporadaSiguiente(t){
+  const m = /^(\d{4})\/(\d{4})$/.exec(t||'');
+  if(!m) return '';
+  const a = Number(m[1])+1, b = Number(m[2])+1;
+  return `${a}/${b}`;
+}
+function nextSocioNumero(){
+  const usados = new Set(state.socios.filter(s=>s.activo!==false && s.numero!=null).map(s=>Number(s.numero)));
+  let n = 1;
+  while(usados.has(n)) n++;
+  return n;
+}
+function temporadaOptions(){
+  const set = new Set(state.socios.map(s=>s.temporada).filter(Boolean));
+  set.add(state.config.temporadaActual);
+  return Array.from(set).sort().reverse();
+}
+function mesLabel(mes){
+  if(!mes) return '—';
+  const [y,m] = mes.split('-');
+  const nombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return `${nombres[Number(m)-1]||m} ${y}`;
+}
+function currentMonthISO(){ return new Date().toISOString().slice(0,7); }
+
 const CATEGORIAS_INGRESO = [
   "Por competiciones (taquillaje)","Por abonados y socios","De retransmisión",
   "Patrocinio y publicidad","Federación (RFEF - Autonómica)","Cuotas de fútbol base y campus",
@@ -226,13 +261,16 @@ let state = {
       {id:"federacion", name:"CUENTA FEDERACIÓN", saldoInicial:0},
       {id:"mutualidad", name:"CUENTA MUTUALIDAD", saldoInicial:0}
     ],
-    presupuesto: {year:new Date().getFullYear(), items:[]}
+    presupuesto: {year:new Date().getFullYear(), items:[]},
+    temporadaActual: temporadaDefault()
   },
   movimientos: [],
   publicidad: [],
   socios: [],
   cantera: [],
-  taquilla: []
+  taquilla: [],
+  cierresSocios: [],
+  cierresCantera: []
 };
 
 let db=null, downloadsCap=null, dbReady=false;
@@ -377,6 +415,8 @@ async function initPersistence(){
   subscribeCollection('socios');
   subscribeCollection('cantera');
   subscribeCollection('taquilla');
+  subscribeCollection('cierresSocios');
+  subscribeCollection('cierresCantera');
   subscribeConfig();
 }
 
@@ -388,6 +428,7 @@ function subscribeConfig(){
       if(!state.config.accounts || !state.config.accounts.length){
         state.config.accounts = [{id:"caja",name:"CAJA (EFECTIVO)",saldoInicial:0}];
       }
+      if(!state.config.temporadaActual){ state.config.temporadaActual = temporadaDefault(); }
     } else {
       ref.set(state.config).catch(()=>{});
     }
@@ -519,7 +560,7 @@ function renderCuentas(){
     <div class="kpis">
       <div class="kpi"><div class="lbl">Ingresos este mes</div><div class="val green">${fmt(ingresosMes)}</div></div>
       <div class="kpi"><div class="lbl">Gastos este mes</div><div class="val red">${fmt(gastosMes)}</div></div>
-      <div class="kpi"><div class="lbl">Socios</div><div class="val">${state.socios.length}</div></div>
+      <div class="kpi"><div class="lbl">Socios</div><div class="val">${state.socios.filter(s=>s.activo!==false).length}</div></div>
       <div class="kpi"><div class="lbl">Jugadores cantera</div><div class="val">${state.cantera.length}</div></div>
     </div>
     <div class="panel">
@@ -815,19 +856,52 @@ function renderPubTable(){
 /* =========================================================================
    TAB: SOCIOS
 ========================================================================= */
+let socSubTab = 'listado';
+let socMesSel = currentMonthISO();
+function subnav(items, active, onClick){
+  return `<div class="subnav" style="display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--border);">
+    ${items.map(it=>`<button type="button" class="subnavbtn ${it.id===active?'active':''}" data-subnav="${it.id}">${it.label}</button>`).join('')}
+  </div>`;
+}
+function bindSubnav(onSelect){
+  document.querySelectorAll('[data-subnav]').forEach(b=>b.addEventListener('click', ()=>onSelect(b.dataset.subnav)));
+}
 function renderSocios(){
-  const alDia = state.socios.filter(s=>pagadoSocio(s)>=Number(s.cuotaAnual||0) && Number(s.cuotaAnual||0)>0).length;
-  const pendientes = state.socios.length - alDia;
   panel().innerHTML = `
     <h2 class="title">Socios</h2>
+    <div id="socSubnavWrap"></div>
+    <div id="socSubPanel"></div>
+  `;
+  document.getElementById('socSubnavWrap').innerHTML = subnav(
+    [{id:'listado', label:'Listado de socios'},{id:'ingresos', label:'Ingresos mensuales'}], socSubTab
+  );
+  bindSubnav((id)=>{ socSubTab=id; renderSocios(); });
+  if(socSubTab==='ingresos') renderSocIngresosMensuales(); else renderSocListado();
+}
+function renderSocListado(){
+  const alDia = state.socios.filter(s=>s.activo!==false && pagadoSocio(s)>=Number(s.cuotaAnual||0) && Number(s.cuotaAnual||0)>0).length;
+  const activos = state.socios.filter(s=>s.activo!==false);
+  const pendientes = activos.length - alDia;
+  const bajas = state.socios.length - activos.length;
+  document.getElementById('socSubPanel').innerHTML = `
     <div class="kpis">
-      <div class="kpi"><div class="lbl">Total socios</div><div class="val">${state.socios.length}</div></div>
+      <div class="kpi"><div class="lbl">Temporada actual</div><div class="val">${esc(state.config.temporadaActual||'—')}</div></div>
+      <div class="kpi"><div class="lbl">Socios activos</div><div class="val">${activos.length}</div></div>
       <div class="kpi"><div class="lbl">Al corriente de pago</div><div class="val green">${alDia}</div></div>
       <div class="kpi"><div class="lbl">Pendientes</div><div class="val red">${pendientes}</div></div>
+      <div class="kpi"><div class="lbl">Bajas (número libre)</div><div class="val">${bajas}</div></div>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <h3 class="subtitle" style="margin:0;">Cambio de temporada</h3>
+      </div>
+      <p class="hint">Al preparar la temporada siguiente, los socios al día de pago pasan a la nueva temporada <b>manteniendo su número</b>. Los que no hayan pagado quedan dados de baja y su número queda libre para asignarse a otro socio.</p>
+      <button class="btn primary" id="btnRenovarTemporada">🔄 Preparar temporada siguiente</button>
     </div>
     <div class="panel accent">
       <h3 class="subtitle">Nuevo socio</h3>
       <form id="formSocio" class="formgrid">
+        <div class="field"><label>Nº de socio</label><input type="number" min="1" step="1" name="numero" value="${nextSocioNumero()}"></div>
         <div class="field"><label>Nombre</label><input type="text" name="nombre" required></div>
         <div class="field"><label>Apellidos</label><input type="text" name="apellidos"></div>
         <div class="field"><label>DNI</label><input type="text" name="dni"></div>
@@ -845,54 +919,94 @@ function renderSocios(){
       </div>
       <div class="filters">
         <div class="field grow"><label>Buscar por nombre</label><input type="text" id="socioBuscar" placeholder="Buscar..."></div>
+        <div class="field"><label>Nº socio</label><input type="text" id="socioNumero" placeholder="Nº..."></div>
         <div class="field"><label>Categoría</label><select id="socioCategoria"><option value="">Todas</option>${categoriaSocioOptions()}</select></div>
-        <div class="field"><label>Estado</label><select id="socioEstado"><option value="">Todos</option><option value="ok">Al día</option><option value="pend">Pendiente</option></select></div>
+        <div class="field"><label>Temporada</label><select id="socioTemporada"><option value="">Todas</option>${temporadaOptions().map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
+        <div class="field"><label>Estado</label><select id="socioEstado"><option value="">Todos (activos)</option><option value="ok">Al día</option><option value="pend">Pendiente</option><option value="baja">Baja</option></select></div>
       </div>
       <div id="socTableWrap"></div>
     </div>
   `;
   document.getElementById('formSocio').addEventListener('submit', async e=>{
     e.preventDefault(); const f = new FormData(e.target);
-    await colAdd('socios', {nombre:f.get('nombre'), apellidos:f.get('apellidos'), dni:f.get('dni'), direccion:f.get('direccion'),
-      telefono:f.get('telefono'), categoria:f.get('categoria'), cuotaAnual:Number(f.get('cuotaAnual'))||0, pagos:[]});
-    e.target.reset(); renderTab('socios');
+    await colAdd('socios', {numero:Number(f.get('numero'))||nextSocioNumero(), nombre:f.get('nombre'), apellidos:f.get('apellidos'), dni:f.get('dni'), direccion:f.get('direccion'),
+      telefono:f.get('telefono'), categoria:f.get('categoria'), cuotaAnual:Number(f.get('cuotaAnual'))||0,
+      temporada:state.config.temporadaActual, activo:true, pagos:[]});
+    e.target.reset(); renderSocListado();
   });
   document.getElementById('socioBuscar').addEventListener('input', renderSocTable);
+  document.getElementById('socioNumero').addEventListener('input', renderSocTable);
   document.getElementById('socioCategoria').addEventListener('change', renderSocTable);
+  document.getElementById('socioTemporada').addEventListener('change', renderSocTable);
   document.getElementById('socioEstado').addEventListener('change', renderSocTable);
   document.getElementById('btnExportSoc').addEventListener('click', ()=>exportSheet('socios'));
   document.getElementById('btnImportSoc').addEventListener('click', ()=>{ importTarget='socios'; document.getElementById('fileImportXlsx').click(); });
+  document.getElementById('btnRenovarTemporada').addEventListener('click', prepararTemporadaSiguiente);
   renderSocTable();
 }
-function pagadoSocio(s){ return (s.pagos||[]).reduce((sum,p)=>sum+Number(p.importe||0),0); }
+function pagadoSocio(s){
+  const pagos = s.pagos||[];
+  if(!s.temporada) return pagos.reduce((sum,p)=>sum+Number(p.importe||0),0);
+  // Solo cuentan los pagos de la temporada actual del socio/jugador (los pagos antiguos, tras una renovación, no cuentan)
+  return pagos.filter(p=>(p.temporada||s.temporada)===s.temporada).reduce((sum,p)=>sum+Number(p.importe||0),0);
+}
+async function prepararTemporadaSiguiente(){
+  const actual = state.config.temporadaActual || temporadaDefault();
+  const sugerida = temporadaSiguiente(actual) || '';
+  const siguiente = prompt('¿Cuál es la temporada siguiente? (formato AAAA/AAAA)', sugerida);
+  if(!siguiente) return;
+  const activos = state.socios.filter(s=>s.activo!==false);
+  const alDia = activos.filter(s=>{ const cuota=Number(s.cuotaAnual||0); return cuota===0 || pagadoSocio(s)>=cuota; });
+  const baja = activos.filter(s=>!alDia.includes(s));
+  if(!confirm(`Se pasarán ${alDia.length} socio(s) al día a la temporada ${siguiente} manteniendo su número.\n${baja.length} socio(s) pendiente(s) quedarán dados de baja y su número quedará libre.\n\n¿Continuar?`)) return;
+  for(const s of alDia){ await colUpdate('socios', s.id, {temporada:siguiente}); }
+  for(const s of baja){ await colUpdate('socios', s.id, {activo:false}); }
+  state.config.temporadaActual = siguiente;
+  await saveConfig();
+  renderSocListado();
+  alert('Temporada actualizada.');
+}
 function renderSocTable(){
   const wrap = document.getElementById('socTableWrap');
   const q = (val('socioBuscar')||'').toLowerCase();
+  const numQ = (val('socioNumero')||'').trim();
   const cat = val('socioCategoria');
+  const temp = val('socioTemporada');
   const est = val('socioEstado');
   let list = state.socios.filter(s=>{
     if(q && !`${s.nombre||''} ${s.apellidos||''}`.toLowerCase().includes(q)) return false;
+    if(numQ && !String(s.numero==null?'':s.numero).includes(numQ)) return false;
     if(cat && s.categoria!==cat) return false;
-    const ok = pagadoSocio(s) >= Number(s.cuotaAnual||0) && Number(s.cuotaAnual||0)>0;
+    if(temp && s.temporada!==temp) return false;
+    const activo = s.activo!==false;
+    const ok = activo && pagadoSocio(s) >= Number(s.cuotaAnual||0) && Number(s.cuotaAnual||0)>0;
     if(est==='ok' && !ok) return false;
-    if(est==='pend' && ok) return false;
+    if(est==='pend' && (ok || !activo)) return false;
+    if(est==='baja' && activo) return false;
+    if(!est && !activo) return false; // por defecto ocultamos las bajas
     return true;
   });
+  list = list.slice().sort((a,b)=>(a.numero||9999)-(b.numero||9999));
   const toolbar = selToolbar('socios','socios');
   if(!list.length){ wrap.innerHTML = toolbar + `<div class="empty">No hay socios que coincidan.</div>`; return; }
   wrap.innerHTML = toolbar + `<div class="tblwrap"><table class="data" id="tbl_socios"><thead><tr>
     <th class="chkcol"><input type="checkbox" data-selall></th>
-    <th>Nombre</th><th>Apellidos</th><th>DNI</th><th>Dirección</th><th>Teléfono</th><th>Categoría</th><th>Cuota anual</th><th>Pagado</th><th>Estado</th><th></th>
+    <th>Nº</th><th>Nombre</th><th>Apellidos</th><th>DNI</th><th>Dirección</th><th>Teléfono</th><th>Categoría</th><th>Temporada</th><th>Cuota anual</th><th>Pagado</th><th>Estado</th><th></th>
   </tr></thead><tbody>
   ${list.map(s=>{
     const pag = pagadoSocio(s); const cuota = Number(s.cuotaAnual||0);
+    const activo = s.activo!==false;
     const ok = pag>=cuota && cuota>0;
+    let estadoTag = '<span class="tag mid">Sin cuota</span>';
+    if(!activo) estadoTag = '<span class="tag bad">Baja</span>';
+    else if(cuota>0) estadoTag = ok?'<span class="tag ok">Al día</span>':'<span class="tag bad">Pendiente</span>';
     return `<tr>
       <td class="chkcol"><input type="checkbox" data-selrow="${s.id}"></td>
+      <td><b>${s.numero!=null?esc(s.numero):'—'}</b></td>
       <td>${esc(s.nombre)}</td><td>${esc(s.apellidos||'—')}</td><td>${esc(s.dni||'—')}</td><td>${esc(s.direccion||'—')}</td><td>${esc(s.telefono||'—')}</td>
-      <td>${esc(s.categoria||'—')}</td>
+      <td>${esc(s.categoria||'—')}</td><td>${esc(s.temporada||'—')}</td>
       <td>${fmt(cuota)}</td><td class="amt pos">${fmt(pag)}</td>
-      <td>${cuota===0?'<span class="tag mid">Sin cuota</span>':(ok?'<span class="tag ok">Al día</span>':'<span class="tag bad">Pendiente</span>')}</td>
+      <td>${estadoTag}</td>
       <td class="rowbtns">
         <button class="btn small primary" data-act="pagar" data-id="${s.id}">Pago</button>
         <button class="btn small danger" data-act="delsoc" data-id="${s.id}">Borrar</button>
@@ -907,6 +1021,62 @@ function renderSocTable(){
     await colDelete('socios', b.dataset.id); renderTab('socios');
   }));
   attachSelEvents('socios','socios', (id)=>removeMovimientosByOrigen('socio', id));
+}
+/* ---- Subpestaña: Ingresos mensuales de socios (acumulado por categoría) ---- */
+function renderSocIngresosMensuales(){
+  const mes = socMesSel;
+  const filas = CATEGORIAS_SOCIO.map(cat=>{
+    const sociosCat = state.socios.filter(s=>s.categoria===cat);
+    const pagosDelMes = [];
+    sociosCat.forEach(s=>(s.pagos||[]).forEach(p=>{ if((p.fecha||'').slice(0,7)===mes) pagosDelMes.push(p); }));
+    const nSocios = new Set(); let total=0;
+    sociosCat.forEach(s=>{ const pm=(s.pagos||[]).filter(p=>(p.fecha||'').slice(0,7)===mes); if(pm.length){ nSocios.add(s.id); pm.forEach(p=>total+=Number(p.importe||0)); } });
+    const cierre = state.cierresSocios.find(c=>c.mes===mes && c.categoria===cat);
+    return {cat, nSocios:nSocios.size, total, cierre};
+  });
+  const totalMes = filas.reduce((s,f)=>s+f.total,0);
+  document.getElementById('socSubPanel').innerHTML = `
+    <div class="panel">
+      <div class="toolbar">
+        <h3 class="subtitle" style="margin:0;">Ingresos de socios por mes y categoría</h3>
+        <div class="toolbar-actions"><div class="field" style="margin:0;"><input type="month" id="socMesInput" value="${mes}"></div></div>
+      </div>
+      <p class="hint">Los pagos que registras en cada socio (botón «Pago») se acumulan aquí por categoría. Al cerrar el mes, genera un único movimiento de ingreso por categoría con el total acumulado — así el libro de movimientos refleja una sola entrada mensual en vez de un apunte por cada socio.</p>
+      <div class="tblwrap"><table class="data"><thead><tr>
+        <th>Categoría</th><th>Nº socios pagados</th><th>Total acumulado</th><th>Estado</th><th></th>
+      </tr></thead><tbody>
+      ${filas.map(f=>`<tr>
+        <td>${esc(f.cat)}</td>
+        <td>${f.nSocios}</td>
+        <td class="amt pos">${fmt(f.total)}</td>
+        <td>${f.cierre?`<span class="tag ok">Generado</span>`:(f.total>0?`<span class="tag mid">Pendiente de generar</span>`:'<span class="tag mid">Sin pagos</span>')}</td>
+        <td class="rowbtns">
+          ${f.cierre
+            ? `<button class="btn small danger" data-undo-cierre="${f.cierre.id}" data-tipo="socios">Deshacer</button>`
+            : (f.total>0 ? `<button class="btn small primary" data-gen-cierre="${esc(f.cat)}">Generar movimiento</button>` : '')}
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>
+      <p class="hint" style="margin-top:12px;"><b>Total del mes (${mesLabel(mes)}):</b> ${fmt(totalMes)}</p>
+    </div>
+  `;
+  document.getElementById('socMesInput').addEventListener('change', (e)=>{ socMesSel=e.target.value||currentMonthISO(); renderSocIngresosMensuales(); });
+  document.querySelectorAll('[data-gen-cierre]').forEach(b=>b.addEventListener('click', ()=>{
+    const cat = b.dataset.genCierre;
+    const fila = filas.find(f=>f.cat===cat);
+    showPagoModal(`${cat} — ${mesLabel(mes)}`, fila.total.toFixed(2), async (d)=>{
+      const cierreId = await colAdd('cierresSocios', {mes, categoria:cat, nSocios:fila.nSocios, importe:d.importe, cuentaId:d.cuentaId, formaPago:d.formaPago, fecha:d.fecha});
+      await addMovimiento({fecha:d.fecha, tipo:'Ingreso', categoria:'Por abonados y socios', empresa:state.config.clubName,
+        concepto:`Cuotas socios · ${cat} · ${mesLabel(mes)} (${fila.nSocios} socios)`, cuentaId:d.cuentaId, formaPago:d.formaPago, importe:d.importe, origen:'cierreSocios', origenId:cierreId});
+      renderSocIngresosMensuales();
+    });
+  }));
+  document.querySelectorAll('[data-undo-cierre]').forEach(b=>b.addEventListener('click', async ()=>{
+    if(!confirm('¿Deshacer este cierre mensual? Se eliminará también su movimiento de ingreso asociado.')) return;
+    await removeMovimientosByOrigen('cierreSocios', b.dataset.undoCierre);
+    await colDelete('cierresSocios', b.dataset.undoCierre);
+    renderSocIngresosMensuales();
+  }));
 }
 function showPagoModal(nombre, defaultImporte, onSubmit){
   const overlay = document.createElement('div');
@@ -939,22 +1109,34 @@ function openPagoSocio(id){
   });
 }
 async function registrarPagoSocio(s, importe, forma, cuentaId, fecha){
-  const pago = {id:uid(), fecha:fecha||todayISO(), importe, formaPago:forma, cuentaId};
+  // Nota: el pago individual NO genera un movimiento automático. Los ingresos se
+  // acumulan por categoría y mes en la subpestaña «Ingresos mensuales», desde donde
+  // se genera un único movimiento al cierre del mes.
+  const pago = {id:uid(), fecha:fecha||todayISO(), importe, formaPago:forma, cuentaId, temporada:s.temporada};
   const pagos = [...(s.pagos||[]), pago];
   await colUpdate('socios', s.id, {pagos});
-  if(forma!=='Obsequio' && importe>0){
-    await addMovimiento({fecha:pago.fecha, tipo:'Ingreso', categoria:'Por abonados y socios', empresa:s.nombre,
-      concepto:'Cuota de socio', cuentaId, formaPago:forma, importe, origen:'socio', origenId:s.id});
-  }
   renderTab('socios');
 }
 
 /* =========================================================================
    TAB: CANTERA
 ========================================================================= */
+let cantSubTab = 'listado';
+let cantMesSel = currentMonthISO();
 function renderCantera(){
   panel().innerHTML = `
     <h2 class="title">Cuotas de la cantera</h2>
+    <div id="cantSubnavWrap"></div>
+    <div id="cantSubPanel"></div>
+  `;
+  document.getElementById('cantSubnavWrap').innerHTML = subnav(
+    [{id:'listado', label:'Listado por equipo'},{id:'ingresos', label:'Ingresos mensuales'}], cantSubTab
+  );
+  bindSubnav((id)=>{ cantSubTab=id; renderCantera(); });
+  if(cantSubTab==='ingresos') renderCantIngresosMensuales(); else renderCantListado();
+}
+function renderCantListado(){
+  document.getElementById('cantSubPanel').innerHTML = `
     <div class="panel accent">
       <h3 class="subtitle">Nuevo jugador/a</h3>
       <form id="formCantera" class="formgrid">
@@ -980,7 +1162,7 @@ function renderCantera(){
   document.getElementById('formCantera').addEventListener('submit', async e=>{
     e.preventDefault(); const f = new FormData(e.target);
     await colAdd('cantera', {nombre:f.get('nombre'), equipo:f.get('equipo'), cuotaTotal:Number(f.get('cuotaTotal'))||0, pagos:[]});
-    e.target.reset(); renderTab('cantera');
+    e.target.reset(); renderCantListado();
   });
   ['cantBuscar','cantEquipo','cantEstado'].forEach(id=>document.getElementById(id).addEventListener('input', renderCantTable));
   document.getElementById('btnExportCant').addEventListener('click', ()=>exportSheet('cantera'));
@@ -1032,14 +1214,66 @@ function openPagoCantera(id){
   });
 }
 async function registrarPagoCantera(j, importe, forma, cuentaId, fecha){
+  // Igual que en socios: el pago individual no genera movimiento automático.
+  // Se acumula por equipo y mes en «Ingresos mensuales» para generar un único movimiento al cierre.
   const pago = {id:uid(), fecha:fecha||todayISO(), importe, formaPago:forma, cuentaId};
   const pagos = [...(j.pagos||[]), pago];
   await colUpdate('cantera', j.id, {pagos});
-  if(forma!=='Obsequio' && importe>0){
-    await addMovimiento({fecha:pago.fecha, tipo:'Ingreso', categoria:'Cuotas de fútbol base y campus', empresa:j.nombre,
-      concepto:'Cuota cantera · '+j.equipo, cuentaId, formaPago:forma, importe, origen:'cantera', origenId:j.id});
-  }
   renderTab('cantera');
+}
+/* ---- Subpestaña: Ingresos mensuales de cantera (acumulado por equipo) ---- */
+function renderCantIngresosMensuales(){
+  const mes = cantMesSel;
+  const filas = EQUIPOS_CANTERA.map(eq=>{
+    const jugadoresEq = state.cantera.filter(j=>j.equipo===eq);
+    const nJug = new Set(); let total=0;
+    jugadoresEq.forEach(j=>{ const pm=(j.pagos||[]).filter(p=>(p.fecha||'').slice(0,7)===mes); if(pm.length){ nJug.add(j.id); pm.forEach(p=>total+=Number(p.importe||0)); } });
+    const cierre = state.cierresCantera.find(c=>c.mes===mes && c.categoria===eq);
+    return {eq, nJug:nJug.size, total, cierre};
+  });
+  const totalMes = filas.reduce((s,f)=>s+f.total,0);
+  document.getElementById('cantSubPanel').innerHTML = `
+    <div class="panel">
+      <div class="toolbar">
+        <h3 class="subtitle" style="margin:0;">Ingresos de cantera por mes y equipo</h3>
+        <div class="toolbar-actions"><div class="field" style="margin:0;"><input type="month" id="cantMesInput" value="${mes}"></div></div>
+      </div>
+      <p class="hint">Los pagos que registras en cada jugador/a se acumulan aquí por equipo. Al cerrar el mes, genera un único movimiento de ingreso por equipo con el total acumulado.</p>
+      <div class="tblwrap"><table class="data"><thead><tr>
+        <th>Equipo</th><th>Nº jugadores pagados</th><th>Total acumulado</th><th>Estado</th><th></th>
+      </tr></thead><tbody>
+      ${filas.map(f=>`<tr>
+        <td>${esc(f.eq)}</td>
+        <td>${f.nJug}</td>
+        <td class="amt pos">${fmt(f.total)}</td>
+        <td>${f.cierre?`<span class="tag ok">Generado</span>`:(f.total>0?`<span class="tag mid">Pendiente de generar</span>`:'<span class="tag mid">Sin pagos</span>')}</td>
+        <td class="rowbtns">
+          ${f.cierre
+            ? `<button class="btn small danger" data-undo-cierre-c="${f.cierre.id}">Deshacer</button>`
+            : (f.total>0 ? `<button class="btn small primary" data-gen-cierre-c="${esc(f.eq)}">Generar movimiento</button>` : '')}
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>
+      <p class="hint" style="margin-top:12px;"><b>Total del mes (${mesLabel(mes)}):</b> ${fmt(totalMes)}</p>
+    </div>
+  `;
+  document.getElementById('cantMesInput').addEventListener('change', (e)=>{ cantMesSel=e.target.value||currentMonthISO(); renderCantIngresosMensuales(); });
+  document.querySelectorAll('[data-gen-cierre-c]').forEach(b=>b.addEventListener('click', ()=>{
+    const eq = b.dataset.genCierreC;
+    const fila = filas.find(f=>f.eq===eq);
+    showPagoModal(`${eq} — ${mesLabel(mes)}`, fila.total.toFixed(2), async (d)=>{
+      const cierreId = await colAdd('cierresCantera', {mes, categoria:eq, nJugadores:fila.nJug, importe:d.importe, cuentaId:d.cuentaId, formaPago:d.formaPago, fecha:d.fecha});
+      await addMovimiento({fecha:d.fecha, tipo:'Ingreso', categoria:'Cuotas de fútbol base y campus', empresa:state.config.clubName,
+        concepto:`Cuota cantera · ${eq} · ${mesLabel(mes)} (${fila.nJug} jugadores)`, cuentaId:d.cuentaId, formaPago:d.formaPago, importe:d.importe, origen:'cierreCantera', origenId:cierreId});
+      renderCantIngresosMensuales();
+    });
+  }));
+  document.querySelectorAll('[data-undo-cierre-c]').forEach(b=>b.addEventListener('click', async ()=>{
+    if(!confirm('¿Deshacer este cierre mensual? Se eliminará también su movimiento de ingreso asociado.')) return;
+    await removeMovimientosByOrigen('cierreCantera', b.dataset.undoCierreC);
+    await colDelete('cierresCantera', b.dataset.undoCierreC);
+    renderCantIngresosMensuales();
+  }));
 }
 
 /* =========================================================================
@@ -1610,7 +1844,7 @@ let importTarget = 'movimientos';
 function sheetDataFor(name){
   if(name==='movimientos') return state.movimientos.map(m=>({Fecha:m.fecha,Tipo:m.tipo,Categoria:m.categoria,Empresa:m.empresa,Concepto:m.concepto,Cuenta:accName(m.cuentaId),FormaPago:m.formaPago,Importe:m.importe}));
   if(name==='publicidad') return state.publicidad.map(p=>({Fecha:p.fecha,Empresa:p.empresa,Concepto:p.concepto,Base:p.base,IVA:p.ivaPct,Total:p.total,FormaPago:p.formaPago,Cuenta:accName(p.cuentaId),Cobrado:p.cobrado?'Si':'No'}));
-  if(name==='socios') return state.socios.map(s=>({Nombre:s.nombre,Apellidos:s.apellidos,DNI:s.dni,Direccion:s.direccion,Telefono:s.telefono,Categoria:s.categoria,CuotaAnual:s.cuotaAnual,Pagado:pagadoSocio(s)}));
+  if(name==='socios') return state.socios.map(s=>({Numero:s.numero,Nombre:s.nombre,Apellidos:s.apellidos,DNI:s.dni,Direccion:s.direccion,Telefono:s.telefono,Categoria:s.categoria,Temporada:s.temporada,Activo:s.activo!==false?'Si':'No',CuotaAnual:s.cuotaAnual,Pagado:pagadoSocio(s)}));
   if(name==='cantera') return state.cantera.map(j=>({Nombre:j.nombre,Equipo:j.equipo,CuotaTotal:j.cuotaTotal,Pagado:pagadoSocio(j)}));
   if(name==='taquilla') return state.taquilla.map(t=>({Fecha:t.fecha,Partido:t.partido,Entradas5:t.entradas5?.cantidad,Entradas10:t.entradas10?.cantidad,Anticipada:t.anticipada?.cantidad,Rifa:t.rifa?.cantidad,TotalTaquilla:t.totalTaquilla,TotalRifa:t.totalRifa,ArqueoTaquilla:t.arqueoTaquilla?.total,DescuadreTaquilla:t.arqueoTaquilla?.diferencia,ArqueoRifa:t.arqueoRifa?.total,DescuadreRifa:t.arqueoRifa?.diferencia}));
   return [];
@@ -1662,8 +1896,11 @@ document.getElementById('fileImportXlsx').addEventListener('change', async (e)=>
       count++;
     } else if(importTarget==='socios'){
       await colAdd('socios', {
+        numero:r.Numero!=null && r.Numero!=='' ? Number(r.Numero) : nextSocioNumero(),
         nombre:r.Nombre||'', apellidos:r.Apellidos||'', dni:r.DNI||'', direccion:r.Direccion||'',
-        telefono:r.Telefono||'', categoria:r.Categoria||'Adulto', cuotaAnual:Number(r.CuotaAnual)||0, pagos:[]
+        telefono:r.Telefono||'', categoria:r.Categoria||'Adulto', temporada:r.Temporada||state.config.temporadaActual,
+        activo: r.Activo==='No' ? false : true,
+        cuotaAnual:Number(r.CuotaAnual)||0, pagos:[]
       });
       count++;
     } else if(importTarget==='cantera'){
@@ -1708,11 +1945,11 @@ document.getElementById('fileRestore').addEventListener('change', async (e)=>{
     const text = await file.text();
     const parsed = JSON.parse(text);
     if(!confirm('Esto sustituirá TODOS los datos actuales por los de la copia. ¿Continuar?')) return;
-    state = Object.assign({config:state.config, movimientos:[], publicidad:[], socios:[], cantera:[], taquilla:[]}, parsed);
+    state = Object.assign({config:state.config, movimientos:[], publicidad:[], socios:[], cantera:[], taquilla:[], cierresSocios:[], cierresCantera:[]}, parsed);
     localSave();
     if(db){
       await db.doc('config/main').set(state.config);
-      for(const coll of ['movimientos','publicidad','socios','cantera','taquilla']){
+      for(const coll of ['movimientos','publicidad','socios','cantera','taquilla','cierresSocios','cierresCantera']){
         for(const item of state[coll]){
           const {id, ...rest} = item;
           await db.collection(coll).add(rest);
