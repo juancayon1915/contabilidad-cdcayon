@@ -212,8 +212,22 @@ function temporadaSiguiente(t){
   const a = Number(m[1])+1, b = Number(m[2])+1;
   return `${a}/${b}`;
 }
-function nextSocioNumero(){
-  const usados = new Set(state.socios.filter(s=>s.activo!==false && s.numero!=null).map(s=>Number(s.numero)));
+/* ---------- Series de numeración por categoría ----------
+   Honor y Empresa llevan su propia numeración correlativa (empezando en 1
+   cada una, p.ej. 1..9 los de Honor y 1..30 los de Empresa); el resto de
+   categorías comparten una tercera numeración general (también desde el 1
+   en adelante, sin límite). */
+function serieSocio(categoria){
+  const c = (categoria||'').trim().toLowerCase();
+  if(c==='honor') return 'honor';
+  if(c==='empresa') return 'empresa';
+  return 'general';
+}
+const SERIE_LABEL = {honor:'Honor', empresa:'Empresa', general:'General'};
+const SERIE_ORDEN = {honor:0, empresa:1, general:2};
+function nextSocioNumero(categoria){
+  const serie = serieSocio(categoria);
+  const usados = new Set(state.socios.filter(s=>s.activo!==false && serieSocio(s.categoria)===serie && s.numero!=null).map(s=>Number(s.numero)));
   let n = 1;
   while(usados.has(n)) n++;
   return n;
@@ -941,13 +955,13 @@ function renderSocListado(){
     <div class="panel accent">
       <h3 class="subtitle">Nuevo socio</h3>
       <form id="formSocio" class="formgrid">
-        <div class="field"><label>Nº de socio</label><input type="number" min="1" step="1" name="numero" value="${nextSocioNumero()}"></div>
+        <div class="field"><label>Categoría</label><select name="categoria" id="socioNuevaCategoria">${categoriaSocioOptions()}</select></div>
+        <div class="field"><label>Nº de socio <span id="socioNuevaSerieLbl" style="text-transform:none;font-weight:400;"></span></label><input type="number" min="1" step="1" name="numero" id="socioNuevoNumero" value="${nextSocioNumero(CATEGORIAS_SOCIO[0])}"></div>
         <div class="field"><label>Nombre</label><input type="text" name="nombre" required></div>
         <div class="field"><label>Apellidos</label><input type="text" name="apellidos"></div>
         <div class="field"><label>DNI</label><input type="text" name="dni"></div>
         <div class="field grow"><label>Dirección</label><input type="text" name="direccion"></div>
         <div class="field"><label>Teléfono</label><input type="text" name="telefono"></div>
-        <div class="field"><label>Categoría</label><select name="categoria">${categoriaSocioOptions()}</select></div>
         <div class="field"><label>Cuota anual (€)</label><input type="number" step="0.01" min="0" name="cuotaAnual" value="0"></div>
         <div class="field" style="align-self:end;"><button class="btn primary" type="submit" style="width:100%;">Añadir socio</button></div>
       </form>
@@ -967,9 +981,17 @@ function renderSocListado(){
       <div id="socTableWrap"></div>
     </div>
   `;
+  function actualizarNumeroSugeridoNuevoSocio(){
+    const cat = document.getElementById('socioNuevaCategoria').value;
+    const serie = serieSocio(cat);
+    document.getElementById('socioNuevoNumero').value = nextSocioNumero(cat);
+    document.getElementById('socioNuevaSerieLbl').textContent = serie==='general' ? '' : `(serie ${SERIE_LABEL[serie]})`;
+  }
+  actualizarNumeroSugeridoNuevoSocio();
+  document.getElementById('socioNuevaCategoria').addEventListener('change', actualizarNumeroSugeridoNuevoSocio);
   document.getElementById('formSocio').addEventListener('submit', async e=>{
     e.preventDefault(); const f = new FormData(e.target);
-    await colAdd('socios', {numero:Number(f.get('numero'))||nextSocioNumero(), nombre:f.get('nombre'), apellidos:f.get('apellidos'), dni:f.get('dni'), direccion:f.get('direccion'),
+    await colAdd('socios', {numero:Number(f.get('numero'))||nextSocioNumero(f.get('categoria')), nombre:f.get('nombre'), apellidos:f.get('apellidos'), dni:f.get('dni'), direccion:f.get('direccion'),
       telefono:f.get('telefono'), categoria:f.get('categoria'), cuotaAnual:Number(f.get('cuotaAnual'))||0,
       temporada:state.config.temporadaActual, activo:true, pagos:[]});
     e.target.reset(); renderSocListado();
@@ -1026,7 +1048,11 @@ function renderSocTable(){
     if(!est && !activo) return false; // por defecto ocultamos las bajas
     return true;
   });
-  list = list.slice().sort((a,b)=>(a.numero||9999)-(b.numero||9999));
+  list = list.slice().sort((a,b)=>{
+    const sa = SERIE_ORDEN[serieSocio(a.categoria)], sb = SERIE_ORDEN[serieSocio(b.categoria)];
+    if(sa!==sb) return sa-sb;
+    return (a.numero||9999)-(b.numero||9999);
+  });
   const toolbar = selToolbar('socios','socios');
   if(!list.length){ wrap.innerHTML = toolbar + `<div class="empty">No hay socios que coincidan.</div>`; return; }
   wrap.innerHTML = toolbar + `<div class="tblwrap"><table class="data" id="tbl_socios"><thead><tr>
@@ -1057,12 +1083,15 @@ function renderSocTable(){
     let estadoTag = '<span class="tag mid">Sin cuota</span>';
     if(!activo) estadoTag = '<span class="tag bad">Baja</span>';
     else if(cuota>0) estadoTag = ok?'<span class="tag ok">Al día</span>':'<span class="tag bad">Pendiente</span>';
+    const serie = serieSocio(s.categoria);
+    const numeroTxt = s.numero!=null ? esc(s.numero) : '—';
     return `<tr>
       <td class="chkcol"><input type="checkbox" data-selrow="${s.id}"></td>
-      <td><b>${s.numero!=null?esc(s.numero):'—'}</b></td>
+      <td><b>${numeroTxt}</b>${serie!=='general'?` <span class="tag mid" style="font-size:9.5px;">${SERIE_LABEL[serie]}</span>`:''}</td>
       <td>${esc(s.nombre)}</td><td>${esc(s.apellidos||'—')}</td><td>${esc(s.dni||'—')}</td><td>${esc(s.direccion||'—')}</td><td>${esc(s.telefono||'—')}</td>
       <td>${esc(s.categoria||'—')}</td><td>${esc(s.temporada||'—')}</td>
-      <td>${fmt(cuota)}</td><td class="amt pos">${fmt(pag)}</td>
+      <td><input type="number" step="0.01" min="0" data-quickcuota="${s.id}" value="${cuota}" style="width:90px;"></td>
+      <td class="amt pos">${fmt(pag)}</td>
       <td>${estadoTag}</td>
       <td class="rowbtns">
         <button class="btn small" data-act="editsoc" data-id="${s.id}">Editar</button>
@@ -1072,6 +1101,13 @@ function renderSocTable(){
     </tr>`;
   }).join('')}
   </tbody></table></div>`;
+  wrap.querySelectorAll('[data-quickcuota]').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const nuevaCuota = Number(inp.value)||0;
+      await colUpdate('socios', inp.dataset.quickcuota, {cuotaAnual: nuevaCuota});
+    });
+    inp.addEventListener('click', e=>e.stopPropagation());
+  });
   wrap.querySelectorAll('[data-act=pagar]').forEach(b=>b.addEventListener('click', ()=>openPagoSocio(b.dataset.id)));
   wrap.querySelectorAll('[data-act=editsoc]').forEach(b=>b.addEventListener('click', ()=>{ editingSocioId=b.dataset.id; renderSocTable(); }));
   wrap.querySelectorAll('[data-act=cancelsoc]').forEach(b=>b.addEventListener('click', ()=>{ editingSocioId=null; renderSocTable(); }));
@@ -2084,11 +2120,12 @@ document.getElementById('fileImportXlsx').addEventListener('change', async (e)=>
       const temporada = getField(r,'Temporada')||state.config.temporadaActual;
       const activoRaw = getField(r,'Activo');
       const estadoRaw = normKey(getField(r,'EstadoPago','Estado pago','Estado'));
+      const categoriaImport = normalizeCategoriaSocio(getField(r,'Categoria','Categoría'));
       const socioId = await colAdd('socios', {
-        numero: numeroRaw!=null && numeroRaw!=='' ? Number(numeroRaw) : nextSocioNumero(),
+        numero: numeroRaw!=null && numeroRaw!=='' ? Number(numeroRaw) : nextSocioNumero(categoriaImport),
         nombre:getField(r,'Nombre')||'', apellidos:getField(r,'Apellidos')||'', dni:getField(r,'DNI')||'',
         direccion:getField(r,'Direccion','Dirección')||'', telefono:getField(r,'Telefono','Teléfono')||'',
-        categoria:normalizeCategoriaSocio(getField(r,'Categoria','Categoría')), temporada,
+        categoria:categoriaImport, temporada,
         activo: activoRaw==='No' ? false : true,
         cuotaAnual, pagos:[]
       });
