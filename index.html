@@ -581,11 +581,67 @@ function renderCuentas(){
       <h3 class="subtitle">Últimos movimientos</h3>
       ${renderMiniMovs()}
     </div>
+    ${renderResumenMensualCuentas()}
   `;
+  const selResumen = document.getElementById('cuentasResumenSel');
+  if(selResumen) selResumen.addEventListener('change', ()=>{
+    cuentasResumenAccId = selResumen.value;
+    renderCuentas();
+  });
 }
 function sumByMonth(tipo){
   const now = new Date(); const ym = now.toISOString().slice(0,7);
   return state.movimientos.filter(m=>m.tipo===tipo && (m.fecha||'').startsWith(ym)).reduce((s,m)=>s+Math.abs(m.importe),0);
+}
+/* ---- Resumen mensual por cuenta: cada mes empieza con el saldo (sobrante)
+   con el que cerró el mes anterior, de forma automática y encadenada. ---- */
+function resumenMensualCuenta(accId){
+  const acc = byId(state.config.accounts, accId);
+  if(!acc) return [];
+  const movs = sortMovs(state.movimientos.filter(m=>m.cuentaId===accId));
+  if(!movs.length) return [];
+  const meses = {};
+  movs.forEach(m=>{
+    const ym = (m.fecha||'').slice(0,7); if(!ym) return;
+    if(!meses[ym]) meses[ym] = {ingresos:0, gastos:0};
+    if(signedAmount(m)>=0) meses[ym].ingresos += Math.abs(m.importe);
+    else meses[ym].gastos += Math.abs(m.importe);
+  });
+  const ymsSorted = Object.keys(meses).sort();
+  let saldo = Number(acc.saldoInicial)||0;
+  return ymsSorted.map(ym=>{
+    const inicial = saldo;
+    saldo = inicial + meses[ym].ingresos - meses[ym].gastos;
+    return {ym, inicial, ingresos:meses[ym].ingresos, gastos:meses[ym].gastos, final:saldo};
+  });
+}
+let cuentasResumenAccId = null;
+function renderResumenMensualCuentas(){
+  if(!cuentasResumenAccId || !byId(state.config.accounts, cuentasResumenAccId)){
+    cuentasResumenAccId = (state.config.accounts.find(a=>/caja|efectivo/i.test(a.name)) || state.config.accounts[0] || {}).id;
+  }
+  const filas = resumenMensualCuenta(cuentasResumenAccId).slice().reverse();
+  const tabla = !filas.length ? `<div class="empty">Todavía no hay movimientos en esta cuenta.</div>` :
+    `<div class="tblwrap"><table class="data"><thead><tr>
+      <th>Mes</th><th>Saldo inicial (sobrante mes anterior)</th><th>Ingresos</th><th>Gastos</th><th>Saldo final</th>
+    </tr></thead><tbody>
+    ${filas.map(f=>`<tr>
+      <td>${esc(mesLabel(f.ym))}</td>
+      <td>${fmt(f.inicial)}</td>
+      <td class="amt pos">+${fmt(f.ingresos)}</td>
+      <td class="amt neg">-${fmt(f.gastos)}</td>
+      <td class="amt ${f.final<0?'neg':'pos'}"><b>${fmt(f.final)}</b></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+  return `
+    <div class="panel">
+      <div class="toolbar">
+        <h3 class="subtitle" style="margin:0;">Resumen mensual por cuenta</h3>
+        <div class="field" style="min-width:220px;"><select id="cuentasResumenSel">${state.config.accounts.map(a=>`<option value="${a.id}" ${a.id===cuentasResumenAccId?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
+      </div>
+      <p class="hint">Cada mes arranca automáticamente con el saldo (sobrante) con el que terminó el mes anterior; no hace falta anotarlo a mano.</p>
+      ${tabla}
+    </div>`;
 }
 function renderMiniMovs(){
   const last = sortMovs(state.movimientos).slice(-8).reverse();
