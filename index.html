@@ -760,6 +760,7 @@ function attachMovRowEvents(){
 /* =========================================================================
    TAB: PUBLICIDAD
 ========================================================================= */
+let editingPubId = null;
 function renderPublicidad(){
   const totalCobrado = state.publicidad.filter(p=>p.cobrado).reduce((s,p)=>s+Number(p.total),0);
   const totalPendiente = state.publicidad.filter(p=>!p.cobrado).reduce((s,p)=>s+Number(p.total),0);
@@ -824,17 +825,35 @@ function renderPubTable(){
     <th class="chkcol"><input type="checkbox" data-selall></th>
     <th>Fecha</th><th>Empresa</th><th>Concepto</th><th>Base</th><th>IVA</th><th>Total</th><th>Forma</th><th>Cuenta</th><th>Estado</th><th></th>
   </tr></thead><tbody>
-  ${list.map(p=>`<tr>
+  ${list.map(p=>{
+    if(editingPubId===p.id){
+      return `<tr data-id="${p.id}" class="editing">
+        <td class="chkcol"></td>
+        <td><input type="date" data-f="fecha" value="${p.fecha||''}"></td>
+        <td><input type="text" data-f="empresa" value="${esc(p.empresa||'')}"></td>
+        <td><input type="text" data-f="concepto" value="${esc(p.concepto||'')}"></td>
+        <td><input type="number" step="0.01" min="0" data-f="base" value="${p.base}" style="width:80px;"></td>
+        <td><select data-f="ivaPct"><option value="21" ${p.ivaPct==21?'selected':''}>21%</option><option value="10" ${p.ivaPct==10?'selected':''}>10%</option><option value="0" ${!p.ivaPct?'selected':''}>Exento</option></select></td>
+        <td class="amt pos" id="pubTotalPreview_${p.id}">${fmt(p.total)}</td>
+        <td><select data-f="formaPago">${formaPagoOptions(p.formaPago)}</select></td>
+        <td><select data-f="cuentaId">${accountOptions(p.cuentaId)}</select></td>
+        <td>${p.cobrado? '<span class="tag ok">Cobrado</span>' : '<span class="tag bad">Pendiente</span>'}</td>
+        <td class="rowbtns"><button class="btn small primary" data-act="savepub" data-id="${p.id}">Guardar</button><button class="btn small" data-act="cancelpub">Cancelar</button></td>
+      </tr>`;
+    }
+    return `<tr>
     <td class="chkcol"><input type="checkbox" data-selrow="${p.id}"></td>
     <td>${fmtDate(p.fecha)}</td><td>${esc(p.empresa)}</td><td>${esc(p.concepto||'—')}</td>
     <td>${fmt(p.base)}</td><td>${p.ivaPct>0? p.ivaPct+'%' : 'Exento'}</td><td class="amt pos">${fmt(p.total)}</td>
     <td>${esc(p.formaPago||'—')}</td><td>${esc(accName(p.cuentaId))}</td>
     <td>${p.cobrado? '<span class="tag ok">Cobrado</span>' : '<span class="tag bad">Pendiente</span>'}</td>
     <td class="rowbtns">
+      <button class="btn small" data-act="editpub" data-id="${p.id}">Editar</button>
       ${!p.cobrado?`<button class="btn small primary" data-act="cobrar" data-id="${p.id}">Marcar cobrado</button>`:''}
       <button class="btn small danger" data-act="delpub" data-id="${p.id}">Borrar</button>
     </td>
-  </tr>`).join('')}
+  </tr>`;
+  }).join('')}
   </tbody></table></div>`;
   wrap.querySelectorAll('[data-act=cobrar]').forEach(b=>b.addEventListener('click', async ()=>{
     const p = byId(state.publicidad, b.dataset.id);
@@ -843,6 +862,26 @@ function renderPubTable(){
       concepto:(p.concepto||'Publicidad')+(p.ivaPct>0?` (IVA ${p.ivaPct}% incl.)`:' (exento IVA)'),
       cuentaId:p.cuentaId, formaPago:p.formaPago, importe:p.total, origen:'publicidad', origenId:p.id});
     renderTab('publicidad');
+  }));
+  wrap.querySelectorAll('[data-act=editpub]').forEach(b=>b.addEventListener('click', ()=>{ editingPubId=b.dataset.id; renderPubTable(); }));
+  wrap.querySelectorAll('[data-act=cancelpub]').forEach(b=>b.addEventListener('click', ()=>{ editingPubId=null; renderPubTable(); }));
+  wrap.querySelectorAll('tr.editing [data-f=base], tr.editing [data-f=ivaPct]').forEach(el=>el.addEventListener('input', (e)=>{
+    const tr = e.target.closest('tr'); const base = Number(tr.querySelector('[data-f=base]').value)||0;
+    const iva = Number(tr.querySelector('[data-f=ivaPct]').value)||0;
+    tr.querySelector('[id^=pubTotalPreview_]').textContent = fmt(+(base*(1+iva/100)).toFixed(2));
+  }));
+  wrap.querySelectorAll('[data-act=savepub]').forEach(b=>b.addEventListener('click', async ()=>{
+    const tr = b.closest('tr'); const data = {}; const p = byId(state.publicidad, b.dataset.id);
+    tr.querySelectorAll('[data-f]').forEach(inp=> data[inp.dataset.f] = inp.value);
+    data.base = Number(data.base)||0; data.ivaPct = Number(data.ivaPct)||0;
+    data.total = +(data.base*(1+data.ivaPct/100)).toFixed(2);
+    await colUpdate('publicidad', b.dataset.id, data);
+    if(p && p.cobrado){
+      await syncMovByOrigen('publicidad', p.id, null, {fecha:data.fecha, empresa:data.empresa,
+        concepto:(data.concepto||'Publicidad')+(data.ivaPct>0?` (IVA ${data.ivaPct}% incl.)`:' (exento IVA)'),
+        cuentaId:data.cuentaId, formaPago:data.formaPago, importe:data.total});
+    }
+    editingPubId = null; renderTab('publicidad');
   }));
   wrap.querySelectorAll('[data-act=delpub]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm('¿Borrar este contrato de publicidad? También se eliminará su ingreso si lo tenía.')) return;
@@ -858,6 +897,7 @@ function renderPubTable(){
 ========================================================================= */
 let socSubTab = 'listado';
 let socMesSel = currentMonthISO();
+let editingSocioId = null;
 function subnav(items, active, onClick){
   return `<div class="subnav" style="display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--border);">
     ${items.map(it=>`<button type="button" class="subnavbtn ${it.id===active?'active':''}" data-subnav="${it.id}">${it.label}</button>`).join('')}
@@ -997,6 +1037,23 @@ function renderSocTable(){
     const pag = pagadoSocio(s); const cuota = Number(s.cuotaAnual||0);
     const activo = s.activo!==false;
     const ok = pag>=cuota && cuota>0;
+    if(editingSocioId===s.id){
+      return `<tr data-id="${s.id}" class="editing">
+        <td class="chkcol"></td>
+        <td><input type="number" step="1" data-f="numero" value="${s.numero!=null?s.numero:''}" style="width:64px;"></td>
+        <td><input type="text" data-f="nombre" value="${esc(s.nombre||'')}"></td>
+        <td><input type="text" data-f="apellidos" value="${esc(s.apellidos||'')}"></td>
+        <td><input type="text" data-f="dni" value="${esc(s.dni||'')}"></td>
+        <td><input type="text" data-f="direccion" value="${esc(s.direccion||'')}"></td>
+        <td><input type="text" data-f="telefono" value="${esc(s.telefono||'')}"></td>
+        <td><select data-f="categoria">${categoriaSocioOptions(s.categoria)}</select></td>
+        <td><select data-f="temporada">${temporadaOptions().map(t=>`<option value="${esc(t)}" ${t===s.temporada?'selected':''}>${esc(t)}</option>`).join('')}</select></td>
+        <td><input type="number" step="0.01" min="0" data-f="cuotaAnual" value="${cuota}" style="width:90px;"></td>
+        <td class="amt pos">${fmt(pag)}</td>
+        <td><select data-f="activo"><option value="si" ${activo?'selected':''}>Activo</option><option value="no" ${!activo?'selected':''}>Baja</option></select></td>
+        <td class="rowbtns"><button class="btn small primary" data-act="savesoc" data-id="${s.id}">Guardar</button><button class="btn small" data-act="cancelsoc">Cancelar</button></td>
+      </tr>`;
+    }
     let estadoTag = '<span class="tag mid">Sin cuota</span>';
     if(!activo) estadoTag = '<span class="tag bad">Baja</span>';
     else if(cuota>0) estadoTag = ok?'<span class="tag ok">Al día</span>':'<span class="tag bad">Pendiente</span>';
@@ -1008,6 +1065,7 @@ function renderSocTable(){
       <td>${fmt(cuota)}</td><td class="amt pos">${fmt(pag)}</td>
       <td>${estadoTag}</td>
       <td class="rowbtns">
+        <button class="btn small" data-act="editsoc" data-id="${s.id}">Editar</button>
         <button class="btn small primary" data-act="pagar" data-id="${s.id}">Pago</button>
         <button class="btn small danger" data-act="delsoc" data-id="${s.id}">Borrar</button>
       </td>
@@ -1015,6 +1073,17 @@ function renderSocTable(){
   }).join('')}
   </tbody></table></div>`;
   wrap.querySelectorAll('[data-act=pagar]').forEach(b=>b.addEventListener('click', ()=>openPagoSocio(b.dataset.id)));
+  wrap.querySelectorAll('[data-act=editsoc]').forEach(b=>b.addEventListener('click', ()=>{ editingSocioId=b.dataset.id; renderSocTable(); }));
+  wrap.querySelectorAll('[data-act=cancelsoc]').forEach(b=>b.addEventListener('click', ()=>{ editingSocioId=null; renderSocTable(); }));
+  wrap.querySelectorAll('[data-act=savesoc]').forEach(b=>b.addEventListener('click', async ()=>{
+    const tr = b.closest('tr'); const data = {};
+    tr.querySelectorAll('[data-f]').forEach(inp=> data[inp.dataset.f] = inp.value);
+    data.numero = data.numero!=='' ? Number(data.numero) : null;
+    data.cuotaAnual = Number(data.cuotaAnual)||0;
+    data.activo = data.activo==='si';
+    await colUpdate('socios', b.dataset.id, data);
+    editingSocioId = null; renderTab('socios');
+  }));
   wrap.querySelectorAll('[data-act=delsoc]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm('¿Borrar este socio?')) return;
     await removeMovimientosByOrigen('socio', b.dataset.id);
@@ -1123,6 +1192,7 @@ async function registrarPagoSocio(s, importe, forma, cuentaId, fecha){
 ========================================================================= */
 let cantSubTab = 'listado';
 let cantMesSel = currentMonthISO();
+let editingCanteraId = null;
 function renderCantera(){
   panel().innerHTML = `
     <h2 class="title">Cuotas de la cantera</h2>
@@ -1188,11 +1258,23 @@ function renderCantTable(){
   </tr></thead><tbody>
   ${list.map(j=>{
     const pag = pagadoSocio(j); const cuota = Number(j.cuotaTotal||0); const ok = pag>=cuota && cuota>0;
+    if(editingCanteraId===j.id){
+      return `<tr data-id="${j.id}" class="editing">
+        <td class="chkcol"></td>
+        <td><input type="text" data-f="nombre" value="${esc(j.nombre||'')}"></td>
+        <td><select data-f="equipo">${equipoOptions(j.equipo)}</select></td>
+        <td><input type="number" step="0.01" min="0" data-f="cuotaTotal" value="${cuota}" style="width:90px;"></td>
+        <td class="amt pos">${fmt(pag)}</td>
+        <td></td>
+        <td class="rowbtns"><button class="btn small primary" data-act="savecant" data-id="${j.id}">Guardar</button><button class="btn small" data-act="cancelcant">Cancelar</button></td>
+      </tr>`;
+    }
     return `<tr>
       <td class="chkcol"><input type="checkbox" data-selrow="${j.id}"></td>
       <td>${esc(j.nombre)}</td><td>${esc(j.equipo)}</td><td>${fmt(cuota)}</td><td class="amt pos">${fmt(pag)}</td>
       <td>${cuota===0?'<span class="tag mid">Sin cuota</span>':(ok?'<span class="tag ok">Al día</span>':'<span class="tag bad">Pendiente</span>')}</td>
       <td class="rowbtns">
+        <button class="btn small" data-act="editcant" data-id="${j.id}">Editar</button>
         <button class="btn small primary" data-act="pagarc" data-id="${j.id}">Registrar pago</button>
         <button class="btn small danger" data-act="delcant" data-id="${j.id}">Borrar</button>
       </td>
@@ -1200,6 +1282,15 @@ function renderCantTable(){
   }).join('')}
   </tbody></table></div>`;
   wrap.querySelectorAll('[data-act=pagarc]').forEach(b=>b.addEventListener('click', ()=>openPagoCantera(b.dataset.id)));
+  wrap.querySelectorAll('[data-act=editcant]').forEach(b=>b.addEventListener('click', ()=>{ editingCanteraId=b.dataset.id; renderCantTable(); }));
+  wrap.querySelectorAll('[data-act=cancelcant]').forEach(b=>b.addEventListener('click', ()=>{ editingCanteraId=null; renderCantTable(); }));
+  wrap.querySelectorAll('[data-act=savecant]').forEach(b=>b.addEventListener('click', async ()=>{
+    const tr = b.closest('tr'); const data = {};
+    tr.querySelectorAll('[data-f]').forEach(inp=> data[inp.dataset.f] = inp.value);
+    data.cuotaTotal = Number(data.cuotaTotal)||0;
+    await colUpdate('cantera', b.dataset.id, data);
+    editingCanteraId = null; renderTab('cantera');
+  }));
   wrap.querySelectorAll('[data-act=delcant]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm('¿Borrar este jugador/a?')) return;
     await removeMovimientosByOrigen('cantera', b.dataset.id);
@@ -1279,6 +1370,7 @@ function renderCantIngresosMensuales(){
 /* =========================================================================
    TAB: TRASPASOS
 ========================================================================= */
+let editingTraspasoGrupo = null;
 function renderTraspasos(){
   const traspasos = groupTraspasos();
   panel().innerHTML = `
@@ -1297,9 +1389,24 @@ function renderTraspasos(){
     <div class="panel">
       <h3 class="subtitle">Historial de traspasos</h3>
       ${traspasos.length? `<div class="tblwrap"><table class="data"><thead><tr><th>Fecha</th><th>Origen</th><th>Destino</th><th>Importe</th><th>Concepto</th><th></th></tr></thead><tbody>
-      ${traspasos.map(t=>`<tr><td>${fmtDate(t.fecha)}</td><td>${esc(accName(t.origenId))}</td><td>${esc(accName(t.destinoId))}</td>
+      ${traspasos.map(t=>{
+        if(editingTraspasoGrupo===t.grupo){
+          return `<tr data-grp="${t.grupo}" class="editing">
+            <td><input type="date" data-f="fecha" value="${t.fecha||''}"></td>
+            <td><select data-f="origen">${accountOptions(t.origenId)}</select></td>
+            <td><select data-f="destino">${accountOptions(t.destinoId)}</select></td>
+            <td><input type="number" step="0.01" min="0" data-f="importe" value="${t.importe}" style="width:90px;"></td>
+            <td><input type="text" data-f="concepto" value="${esc(t.concepto||'')}"></td>
+            <td class="rowbtns"><button class="btn small primary" data-act="savetrasp" data-grp="${t.grupo}">Guardar</button><button class="btn small" data-act="canceltrasp">Cancelar</button></td>
+          </tr>`;
+        }
+        return `<tr><td>${fmtDate(t.fecha)}</td><td>${esc(accName(t.origenId))}</td><td>${esc(accName(t.destinoId))}</td>
         <td class="amt">${fmt(t.importe)}</td><td>${esc(t.concepto||'—')}</td>
-        <td><button class="btn small danger" data-act="deltrasp" data-grp="${t.grupo}">Borrar</button></td></tr>`).join('')}
+        <td class="rowbtns">
+          <button class="btn small" data-act="edittrasp" data-grp="${t.grupo}">Editar</button>
+          <button class="btn small danger" data-act="deltrasp" data-grp="${t.grupo}">Borrar</button>
+        </td></tr>`;
+      }).join('')}
       </tbody></table></div>` : `<div class="empty">Todavía no hay traspasos.</div>`}
     </div>
   `;
@@ -1313,6 +1420,22 @@ function renderTraspasos(){
     e.target.reset(); e.target.querySelector('[name=fecha]').value = todayISO();
     renderTab('traspasos');
   });
+  panel().querySelectorAll('[data-act=edittrasp]').forEach(b=>b.addEventListener('click', ()=>{ editingTraspasoGrupo=b.dataset.grp; renderTraspasos(); }));
+  panel().querySelectorAll('[data-act=canceltrasp]').forEach(b=>b.addEventListener('click', ()=>{ editingTraspasoGrupo=null; renderTraspasos(); }));
+  panel().querySelectorAll('[data-act=savetrasp]').forEach(b=>b.addEventListener('click', async ()=>{
+    const tr = b.closest('tr'); const grp = b.dataset.grp;
+    const fecha = tr.querySelector('[data-f=fecha]').value;
+    const origen = tr.querySelector('[data-f=origen]').value;
+    const destino = tr.querySelector('[data-f=destino]').value;
+    const importe = Number(tr.querySelector('[data-f=importe]').value)||0;
+    const concepto = tr.querySelector('[data-f=concepto]').value || 'Traspaso entre cuentas';
+    if(origen===destino){ alert('La cuenta de origen y destino no pueden ser la misma.'); return; }
+    const salida = state.movimientos.find(m=>m.origen==='traspaso' && m.origenId===grp && m.tipo==='TraspasoSalida');
+    const entrada = state.movimientos.find(m=>m.origen==='traspaso' && m.origenId===grp && m.tipo==='TraspasoEntrada');
+    if(salida) await colUpdate('movimientos', salida.id, {fecha, cuentaId:origen, importe, concepto:concepto+' → '+accName(destino)});
+    if(entrada) await colUpdate('movimientos', entrada.id, {fecha, cuentaId:destino, importe, concepto:concepto+' ← '+accName(origen)});
+    editingTraspasoGrupo = null; renderTab('traspasos');
+  }));
   panel().querySelectorAll('[data-act=deltrasp]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm('¿Borrar este traspaso?')) return;
     await removeMovimientosByOrigen('traspaso', b.dataset.grp);
@@ -1330,6 +1453,7 @@ function groupTraspasos(){
 /* =========================================================================
    TAB: TAQUILLA Y RIFAS
 ========================================================================= */
+let editingTaqId = null;
 function tirasCount(desde,hasta){ desde=Number(desde); hasta=Number(hasta); if(!desde||!hasta||hasta<desde) return 0; return hasta-desde+1; }
 function renderTaquilla(){
   const totRecTaquilla = state.taquilla.reduce((s,t)=>s+Number(t.totalTaquilla||0),0);
@@ -1490,6 +1614,21 @@ function renderTaqTable(){
   ${list.map(t=>{
     const dTaq = t.arqueoTaquilla?.diferencia||0, dRifa = t.arqueoRifa?.diferencia||0;
     const desc = +(dTaq+dRifa).toFixed(2);
+    if(editingTaqId===t.id){
+      return `<tr data-id="${t.id}" class="editing">
+        <td class="chkcol"></td>
+        <td><input type="date" data-f="fecha" value="${t.fecha||''}"></td>
+        <td><input type="text" data-f="partido" value="${esc(t.partido||'')}"></td>
+        <td><input type="number" min="0" data-f="entradas5" value="${t.entradas5?.cantidad||0}" style="width:60px;"></td>
+        <td><input type="number" min="0" data-f="entradas10" value="${t.entradas10?.cantidad||0}" style="width:60px;"></td>
+        <td><input type="number" min="0" data-f="anticipada" value="${t.anticipada?.cantidad||0}" style="width:60px;"></td>
+        <td><input type="number" min="0" data-f="rifa" value="${t.rifa?.cantidad||0}" style="width:60px;"></td>
+        <td><input type="number" step="0.01" min="0" data-f="totalTaquilla" value="${t.totalTaquilla||0}" style="width:80px;"></td>
+        <td><input type="number" step="0.01" min="0" data-f="totalRifa" value="${t.totalRifa||0}" style="width:80px;"></td>
+        <td></td><td></td>
+        <td class="rowbtns"><button class="btn small primary" data-act="savetaq" data-id="${t.id}">Guardar</button><button class="btn small" data-act="canceltaq">Cancelar</button></td>
+      </tr>`;
+    }
     return `<tr>
     <td class="chkcol"><input type="checkbox" data-selrow="${t.id}"></td>
     <td>${fmtDate(t.fecha)}</td><td>${esc(t.partido||'—')}</td>
@@ -1497,9 +1636,34 @@ function renderTaqTable(){
     <td class="amt pos">${fmt(t.totalTaquilla)}</td><td class="amt pos">${fmt(t.totalRifa)}</td>
     <td class="amt pos">${fmt(Number(t.totalTaquilla||0)+Number(t.totalRifa||0))}</td>
     <td class="amt ${Math.abs(desc)<0.005?'':(desc<0?'neg':'pos')}">${desc===0?'Cuadra':fmt(desc)}</td>
-    <td><button class="btn small danger" data-act="deltaq" data-id="${t.id}">Borrar</button></td>
+    <td class="rowbtns">
+      <button class="btn small" data-act="edittaq" data-id="${t.id}">Editar</button>
+      <button class="btn small danger" data-act="deltaq" data-id="${t.id}">Borrar</button>
+    </td>
   </tr>`;}).join('')}
-  </tbody></table></div>`;
+  </tbody></table></div>
+  <p class="hint" style="margin-top:8px;">Al editar solo se ajustan las cantidades y los totales de esta fila; si el partido ya generó ingresos en «Movimientos», se actualizan también sus importes. El desglose de arqueo (billetes/monedas) no se recalcula al editar.</p>`;
+  wrap.querySelectorAll('[data-act=edittaq]').forEach(b=>b.addEventListener('click', ()=>{ editingTaqId=b.dataset.id; renderTaqTable(); }));
+  wrap.querySelectorAll('[data-act=canceltaq]').forEach(b=>b.addEventListener('click', ()=>{ editingTaqId=null; renderTaqTable(); }));
+  wrap.querySelectorAll('[data-act=savetaq]').forEach(b=>b.addEventListener('click', async ()=>{
+    const tr = b.closest('tr'); const t = byId(state.taquilla, b.dataset.id);
+    const fecha = tr.querySelector('[data-f=fecha]').value;
+    const partido = tr.querySelector('[data-f=partido]').value;
+    const totalTaquilla = Number(tr.querySelector('[data-f=totalTaquilla]').value)||0;
+    const totalRifa = Number(tr.querySelector('[data-f=totalRifa]').value)||0;
+    const data = {
+      fecha, partido,
+      entradas5: Object.assign({}, t.entradas5, {cantidad:Number(tr.querySelector('[data-f=entradas5]').value)||0}),
+      entradas10: Object.assign({}, t.entradas10, {cantidad:Number(tr.querySelector('[data-f=entradas10]').value)||0}),
+      anticipada: Object.assign({}, t.anticipada, {cantidad:Number(tr.querySelector('[data-f=anticipada]').value)||0}),
+      rifa: Object.assign({}, t.rifa, {cantidad:Number(tr.querySelector('[data-f=rifa]').value)||0}),
+      totalTaquilla, totalRifa
+    };
+    await colUpdate('taquilla', b.dataset.id, data);
+    await syncMovByOrigen('taquilla', b.dataset.id, 'Por competiciones (taquillaje)', {fecha, concepto:'Taquilla: '+(partido||'partido'), importe:totalTaquilla});
+    await syncMovByOrigen('taquilla', b.dataset.id, 'Loterías, rifas, etc.', {fecha, concepto:'Rifa: '+(partido||'partido'), importe:totalRifa});
+    editingTaqId = null; renderTab('taquilla');
+  }));
   wrap.querySelectorAll('[data-act=deltaq]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm('¿Borrar esta taquilla? También se eliminarán sus ingresos asociados.')) return;
     await removeMovimientosByOrigen('taquilla', b.dataset.id);
@@ -1869,6 +2033,26 @@ async function saveFile(filename, blobOrData){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
+function normKey(k){ return String(k==null?'':k).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function getField(r, ...candidates){
+  const normCands = candidates.map(normKey);
+  for(const key of Object.keys(r)){
+    if(normCands.includes(normKey(key))) return r[key];
+  }
+  return undefined;
+}
+function normalizeCategoriaSocio(val){
+  const map = {
+    'adulto':'Adulto','jubilado':'Jubilado','joven':'Joven','juvenil':'Juvenil','baby':'Baby',
+    'empresa':'Empresa','honor':'Honor','sociodehonor':'Honor','simpatizante':'Simpatizante','obsequio':'Obsequio'
+  };
+  const k = normKey(val);
+  return map[k] || (val ? String(val) : 'Adulto');
+}
+async function syncMovByOrigen(origen, origenId, categoria, patch){
+  const m = state.movimientos.find(x=>x.origen===origen && x.origenId===origenId && (categoria==null || x.categoria===categoria));
+  if(m) await colUpdate('movimientos', m.id, patch);
+}
 document.getElementById('fileImportXlsx').addEventListener('change', async (e)=>{
   const file = e.target.files[0]; if(!file) return;
   const buf = await file.arrayBuffer();
@@ -1895,13 +2079,22 @@ document.getElementById('fileImportXlsx').addEventListener('change', async (e)=>
       });
       count++;
     } else if(importTarget==='socios'){
-      await colAdd('socios', {
-        numero:r.Numero!=null && r.Numero!=='' ? Number(r.Numero) : nextSocioNumero(),
-        nombre:r.Nombre||'', apellidos:r.Apellidos||'', dni:r.DNI||'', direccion:r.Direccion||'',
-        telefono:r.Telefono||'', categoria:r.Categoria||'Adulto', temporada:r.Temporada||state.config.temporadaActual,
-        activo: r.Activo==='No' ? false : true,
-        cuotaAnual:Number(r.CuotaAnual)||0, pagos:[]
+      const numeroRaw = getField(r,'Numero','Nº socio','No socio','Num socio','NumeroSocio');
+      const cuotaAnual = Number(getField(r,'CuotaAnual','Cuota Anual','Cuota'))||0;
+      const temporada = getField(r,'Temporada')||state.config.temporadaActual;
+      const activoRaw = getField(r,'Activo');
+      const estadoRaw = normKey(getField(r,'EstadoPago','Estado pago','Estado'));
+      const socioId = await colAdd('socios', {
+        numero: numeroRaw!=null && numeroRaw!=='' ? Number(numeroRaw) : nextSocioNumero(),
+        nombre:getField(r,'Nombre')||'', apellidos:getField(r,'Apellidos')||'', dni:getField(r,'DNI')||'',
+        direccion:getField(r,'Direccion','Dirección')||'', telefono:getField(r,'Telefono','Teléfono')||'',
+        categoria:normalizeCategoriaSocio(getField(r,'Categoria','Categoría')), temporada,
+        activo: activoRaw==='No' ? false : true,
+        cuotaAnual, pagos:[]
       });
+      if(socioId && estadoRaw==='pagado' && cuotaAnual>0){
+        await colUpdate('socios', socioId, {pagos:[{id:uid(), fecha:todayISO(), importe:cuotaAnual, formaPago:'Efectivo', cuentaId:state.config.accounts[0]?.id||'', temporada}]});
+      }
       count++;
     } else if(importTarget==='cantera'){
       await colAdd('cantera', {
@@ -1919,7 +2112,7 @@ document.getElementById('fileImportXlsx').addEventListener('change', async (e)=>
     }
   }
   e.target.value = '';
-  alert(`Importados ${count} registros en «${importTarget}». Nota: los registros de publicidad/socios/cantera/taquilla importados no generan movimientos automáticos; anótalos como pago si corresponde.`);
+  alert(`Importados ${count} registros en «${importTarget}». Nota: los registros de publicidad/socios/cantera/taquilla importados no generan movimientos automáticos; anótalos como pago si corresponde. Si el Excel de socios traía «Estado pago = PAGADO», se les ha registrado automáticamente el pago de la cuota anual completa.`);
   renderTab(activeTab);
 });
 function normalizeDate(v){
