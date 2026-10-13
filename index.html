@@ -393,7 +393,7 @@ render();
 #cayonSyncBar{position:sticky;top:0;z-index:9000;background:#f4d13d;color:#111;padding:9px 12px;display:none;gap:10px;align-items:center;justify-content:space-between;font:13px Arial,sans-serif}
 </style>
 <div id="cayonAuthGate"><div class="login-card">
-<h2>🔐 Tesorería CD Cayón</h2><p>Acceso privado — Versión 13 conectada</p>
+<h2>🔐 Tesorería CD Cayón</h2><p>Acceso privado — Versión 14 · diagnóstico de acceso</p>
 <form id="cayonLoginForm"><label>Correo electrónico<input id="cayonEmail" type="email" autocomplete="username" required></label>
 <label>Contraseña<input id="cayonPassword" type="password" autocomplete="current-password" required></label>
 <button type="submit">Entrar</button></form>
@@ -435,8 +435,14 @@ async function start(){
   try{
    const email=document.getElementById('cayonEmail').value.trim(),password=document.getElementById('cayonPassword').value;
    const {error}=await client.auth.signInWithPassword({email,password});if(error)throw error;
-   const {data:profile,error:pe}=await client.from('usuarios_club').select('rol').eq('id',(await client.auth.getUser()).data.user.id).single();
-   if(pe||!profile||!['administrador','tesoreria','consulta'].includes(profile.rol))throw Error('Este usuario no tiene permisos para la tesorería.');
+   const {data:authData,error:authError}=await client.auth.getUser();
+   if(authError||!authData?.user?.id)throw Error('No se ha podido verificar la sesión: '+(authError?.message||'usuario no identificado'));
+   const {data:profile,error:pe}=await client.from('usuarios_club').select('rol').eq('id',authData.user.id).maybeSingle();
+   if(pe)throw Error('No se ha podido consultar tu permiso en usuarios_club: '+pe.message+(pe.code?' (código '+pe.code+')':''));
+   if(!profile)throw Error('Tu sesión es válida, pero no se puede leer tu ficha en usuarios_club. Comprueba que el ID del usuario coincide y que la política de lectura permite consultar su propia fila.');
+   const role=String(profile.rol||'').trim().toLowerCase();
+   if(!['administrador','tesoreria','consulta'].includes(role))throw Error('Tu ficha existe, pero el rol registrado no está autorizado: '+(profile.rol||'(vacío)'));
+   profile.rol=role;
    const {data,error:re}=await client.from('estado_tesoreria').select('datos').eq('id','principal').maybeSingle();if(re)throw re;
    if(data){setState(data.datos);lastSynced=snapshot();}
    else{
@@ -449,7 +455,7 @@ async function start(){
    ready=profile.rol!=='consulta';gate.style.display='none';bar.style.display='flex';
    say(ready?'✓ Conectado a Supabase':'Acceso de consulta · No se pueden guardar cambios');
    document.getElementById('cayonPassword').value='';
-  }catch(err){msg.textContent='No se ha podido entrar: '+err.message;await client.auth.signOut()}
+  }catch(err){msg.textContent='No se ha podido entrar: '+err.message;try{await client.auth.signOut()}catch(_){}}
  });
  document.getElementById('cayonSyncNow').onclick=()=>{if(!ready)return alert('Acceso de solo lectura');revision++;pending=true;flush()};
  document.getElementById('cayonLogout').onclick=async()=>{if(writing||pending){alert('Espera a que se guarden los cambios antes de salir.');return}ready=false;await client.auth.signOut();location.reload()};
