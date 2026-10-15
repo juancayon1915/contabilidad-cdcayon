@@ -882,82 +882,86 @@ function init(){categories();el('budgetType').addEventListener('change',()=>{cat
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
 </script><script>
-/* Mejoras conservadoras: arqueo voluntario y listado de cuotas, sin alterar movimientos históricos. */
+/* Búsqueda por número y agrupación revisable de cobros históricos. */
 (function(){
-'use strict';
-const E=id=>document.getElementById(id);
-const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(n)||0);
-const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const denom=[500,200,100,50,20,10,5,2,1,.5,.2,.1,.05,.02,.01];
-const moneyCount=()=>denom.reduce((a,v,i)=>a+v*(Number(E('arq'+i)?.value)||0),0);
-E('arqueoBilletes').innerHTML=denom.map((v,i)=>'<label>'+money(v)+' · unidades<input id="arq'+i+'" type="number" min="0" step="1" value="0"></label>').join('');
-function renderArqueo(){
- const cfg=S.arqueoCaja||{activo:false,historial:[]};
- E('arqueoEstado').textContent=cfg.activo?'ACTIVO desde '+new Date(cfg.activadoEn).toLocaleString('es-ES')+'. Los arqueos son voluntarios y quedan registrados.':'SIN ACTIVAR. Puedes poner al día los movimientos atrasados. Tú decides cuándo empezar.';
- E('activarArqueo').classList.toggle('hidden',!!cfg.activo);
- E('arqueoOperativa').classList.toggle('hidden',!cfg.activo);
- const counted=moneyCount(),accounted=Number(balances().cash)||0;
- E('arqueoContado').textContent=money(counted);E('arqueoContable').textContent=money(accounted);E('arqueoDiferencia').textContent=money(counted-accounted);
- E('arqueoHistorial').innerHTML=(cfg.historial||[]).slice().reverse().map(x=>'<tr><td>'+h(new Date(x.fecha).toLocaleString('es-ES'))+'</td><td>'+money(x.contado)+'</td><td>'+money(x.contable)+'</td><td>'+money(x.diferencia)+'</td></tr>').join('')||'<tr><td colspan="4">Sin arqueos todavía</td></tr>';
-}
-E('activarArqueo').onclick=()=>{
- if(S.arqueoCaja?.activo)return;
- if(!confirm('¿Quieres activar ahora el arqueo de caja? No se modificará ningún saldo, ingreso ni gasto.'))return;
- S.arqueoCaja={activo:true,activadoEn:new Date().toISOString(),historial:[]};save();renderArqueo();
-};
-E('arqueoBilletes').addEventListener('input',renderArqueo);
-E('guardarArqueo').onclick=()=>{
- if(!S.arqueoCaja?.activo)return alert('Primero activa el arqueo cuando estés al día.');
- if([...E('arqueoBilletes').querySelectorAll('input')].some(i=>!Number.isInteger(Number(i.value))||Number(i.value)<0))return alert('Introduce unidades enteras no negativas.');
- const counted=Math.round(moneyCount()*100)/100,accounted=Math.round((Number(balances().cash)||0)*100)/100;
- if(!confirm('Guardar arqueo: contado '+money(counted)+'; saldo contable '+money(accounted)+'; diferencia '+money(counted-accounted)+'?'))return;
- S.arqueoCaja.historial.push({fecha:new Date().toISOString(),contado:counted,contable:accounted,diferencia:Math.round((counted-accounted)*100)/100});save();renderArqueo();
-};
-function renderCuotas(){
- const sel=E('cuotasTemporada'),old=sel.value;
- const seasons=[...new Set(S.people.filter(p=>p.kind==='Socio'||p.kind==='Jugador').map(p=>p.season).filter(Boolean))].sort().reverse();
- sel.innerHTML='<option value="">Todas</option>'+seasons.map(y=>'<option value="'+h(y)+'">'+h(y)+'</option>').join('');if(seasons.includes(old))sel.value=old;
- const rows=S.people.filter(p=>(p.kind==='Socio'||p.kind==='Jugador')&&Number(p.fee)>0&&(!sel.value||p.season===sel.value)&&(!E('cuotasGrupo').value||p.kind===E('cuotasGrupo').value)).map(p=>{
- const fee=Number(p.fee)||0,paid=paidFor('person',p.id),due=Math.max(0,fee-paid);return {...p,fee,paid,due};
- }).filter(p=>E('cuotasEstado').value==='todos'||(E('cuotasEstado').value==='pagado'?p.due<=.005:p.due>.005));
- E('cuotasResumen').textContent=rows.length+' fichas · Total cuotas '+money(rows.reduce((n,p)=>n+p.fee,0))+' · Cobrado '+money(rows.reduce((n,p)=>n+p.paid,0))+' · Pendiente '+money(rows.reduce((n,p)=>n+p.due,0));
- E('cuotasDetalle').innerHTML=rows.map(p=>'<tr><td>'+h(p.name)+'</td><td>'+h(p.kind)+' · '+h(p.team)+'</td><td>'+h(p.season)+'</td><td>'+money(p.fee)+'</td><td>'+money(p.paid)+'</td><td><strong>'+money(p.due)+'</strong></td><td><button type="button" data-cuota-edit="'+h(p.id)+'">Editar</button> <button type="button" class="danger" data-cuota-remove="'+h(p.id)+'">Anular cuota</button></td></tr>').join('')||'<tr><td colspan="7">No hay fichas con estos filtros</td></tr>';
- // Las cuotas son campos de las fichas, no asientos independientes.
- // No se borran fichas, jugadores, movimientos ni cobros.
- E('cuotasDetalle').querySelectorAll('[data-cuota-edit],[data-cuota-remove]').forEach(btn=>{
-   btn.addEventListener('click',()=>{
-     const id=btn.getAttribute('data-cuota-edit')||btn.getAttribute('data-cuota-remove');
-     const matches=S.people.filter(p=>String(p.id)===String(id));
-     if(matches.length!==1)return alert('No se puede identificar la ficha de forma segura. No se ha cambiado nada.');
-     const person=matches[0];
-     const paid=paidFor('person',person.id);
-     if(btn.hasAttribute('data-cuota-remove')){
-       if(paid>0.005)return alert('Esta cuota tiene cobros registrados ('+money(paid)+'). No se puede anular sin revisar primero los cobros en Movimientos. No se ha cambiado nada.');
-       if(!confirm('¿Anular la cuota de '+person.name+' ('+person.season+')? La ficha del jugador o socio seguirá existiendo y no se borrará ningún movimiento.'))return;
-       person.fee=0;
-     }else{
-       const entered=prompt('Nueva cuota en euros para '+person.name+' (actual '+money(person.fee)+'):',String(person.fee));
-       if(entered===null)return;
-       const amount=Number(entered.trim().replace(',','.'));
-       if(!Number.isFinite(amount)||amount<0)return alert('Introduce una cantidad válida, igual o superior a cero.');
-       if(amount+0.005<paid)return alert('No puedes fijar una cuota inferior a los cobros ya registrados ('+money(paid)+').');
-       if(!confirm('¿Guardar la cuota de '+person.name+' en '+money(amount)+'?'))return;
-       person.fee=Math.round(amount*100)/100;
-     }
-     save();renderCuotas();
-     alert('Cuota actualizada. La ficha y los cobros permanecen intactos.');
-   });
- });
- return rows;
-}
-['cuotasTemporada' ,'cuotasGrupo','cuotasEstado'].forEach(id=>E(id).addEventListener('change',renderCuotas));
-E('exportarCuotas').onclick=()=>{
- const rows=renderCuotas(),csv=[['Nombre','Tipo','Equipo','Temporada','Cuota','Cobrado','Pendiente'],...rows.map(p=>[p.name,p.kind,p.team,p.season,p.fee,p.paid,p.due])].map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
- const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='CD_Cayon_cuotas_pendientes.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
-};
-// La navegación existente gestiona los botones añadidos. Refrescar cuando se abre cada pestaña.
-document.querySelector('[data-tab="arqueo"]').addEventListener('click',renderArqueo);
-document.querySelector('[data-tab="cuotas-control"]').addEventListener('click',renderCuotas);
+ 'use strict';
+ const search=document.getElementById('pSearch');
+ if(search){
+  const wrap=document.createElement('div');wrap.style.cssText='display:flex;align-items:center;gap:5px';
+  search.parentNode.insertBefore(wrap,search);wrap.appendChild(search);
+  const arrows=document.createElement('span');arrows.style.cssText='display:flex;flex-direction:column;gap:3px';
+  for(const [delta,label] of [[1,'▲'],[-1,'▼']]){
+   const b=document.createElement('button');b.type='button';b.textContent=label;
+   b.title=delta===1?'Buscar número de socio siguiente':'Buscar número de socio anterior';
+   b.style.cssText='padding:1px 9px;height:21px;font-size:12px';
+   b.addEventListener('click',()=>{const current=/^\s*\d+\s*$/.test(search.value)?Number(search.value):0;search.value=String(Math.max(1,current+delta));search.dispatchEvent(new Event('input',{bubbles:true}));renderPeople();});
+   arrows.appendChild(b);
+  }
+  wrap.appendChild(arrows);
+ }
+ // No modificar ni borrar cobros sin ficha identificable: se conservan íntegros.
+ function groupType(p){return p.kind==='Jugador'?'Categorías inferiores':'Socios';}
+ function consolidate(){
+  const groups=new Map();let count=0;
+  for(const m of S.moves){
+   if(m.type!=='income')continue;
+   const parts=Array.isArray(m.allocations)&&m.allocations.length?m.allocations:
+     (m.linkedId?.startsWith('person:')?[{linkedId:m.linkedId,amount:m.amount,date:m.date,method:m.method}]:[]);
+   if(!parts.length)continue;
+   // No agrupar movimientos con importes incoherentes o asignaciones no verificables.
+   if(parts.some(a=>!a.linkedId?.startsWith('person:')||!S.people.some(p=>p.id===a.linkedId.slice(7))||!Number.isFinite(Number(a.amount))||Number(a.amount)<=0))continue;
+   if(Math.abs(parts.reduce((v,a)=>v+Number(a.amount),0)-Number(m.amount))>.009)continue;
+   const kinds=new Set(parts.map(a=>groupType(S.people.find(p=>p.id===a.linkedId.slice(7)))));
+   if(kinds.size!==1)continue;
+   const kind=[...kinds][0];
+   const key=[m.date,m.account,m.method||'',m.section||'',kind].join('\u001f');
+   if(!groups.has(key))groups.set(key,[]);
+   groups.get(key).push({m,parts,kind});
+  }
+  const batches=[...groups.values()].filter(items=>items.length>1);
+  if(!batches.length){alert('No hay cobros individuales compatibles pendientes de agrupar. Los movimientos sin socio o jugador vinculado se mantienen separados.');return;}
+  const total=batches.reduce((n,g)=>n+g.length,0),removed=total-batches.length;
+  if(!confirm('Se agruparán '+total+' movimientos antiguos en '+batches.length+' asientos diarios ('+removed+' filas menos). Se conservarán fecha, cuenta, forma, importes y el detalle de cada pagador. Los movimientos sin vinculación segura no se tocarán. ¿Continuar?'))return;
+  // Copia de seguridad antes de alterar movimientos; también descargable desde la aplicación.
+  const backup=JSON.stringify({exportedAt:new Date().toISOString(),reason:'Antes de agrupar cuotas históricas',data:S},null,2);
+  const blob=new Blob([backup],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='cayon-respaldo-antes-agrupar-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  const removedIds=new Set();
+  for(const items of batches){
+   const first=items[0].m,allocations=[];
+   for(const item of items){
+    for(const x of item.parts)allocations.push({linkedId:x.linkedId,amount:Number(x.amount),date:x.date||item.m.date,method:x.method||item.m.method});
+    if(item.m!==first)removedIds.add(item.m.id);
+   }
+   first.amount=Math.round(allocations.reduce((n,x)=>n+x.amount,0)*100)/100;
+   first.allocations=allocations;first.linkedId='';
+   first.category=items[0].kind==='Socios'?'Abonados y socios':'Cuotas de fútbol base y campus';
+   first.subcategory='Cuotas agrupadas';
+   first.description='Cuotas '+items[0].kind+' · '+allocations.length+' pagos';
+   first.thirdParty='Varios pagadores';
+   first.batchKey=[first.date,first.account,first.method,first.section,items[0].kind].join('||');
+  }
+  S.moves=S.moves.filter(m=>!removedIds.has(m.id));
+  logAction('Agrupación histórica',total+' cobros en '+batches.length+' asientos; '+removed+' movimientos absorbidos');
+  save();render();
+  alert('Agrupación terminada: '+total+' cobros en '+batches.length+' movimientos. Se ha descargado una copia de seguridad. Pulsa «Ver detalle» en cada asiento para ver los pagadores.');
+ }
+ const panel=document.querySelector('#tab-moves .panel')||document.getElementById('moveRows')?.closest('.panel');
+ if(panel){const box=document.createElement('div');box.className='actions';box.innerHTML='<button type="button" id="cayonConsolidateOld">Agrupar cuotas ya registradas por día</button><span class="small muted">Socios y categorías inferiores por separado; mismo día, cuenta, forma y sección. Conserva el detalle.</span>';panel.insertBefore(box,panel.firstChild.nextSibling);box.querySelector('button').onclick=consolidate;}
+ // Corregir las columnas del listado de socios sin tocar la lógica de cobros.
+ const oldRender=renderPeople;
+ renderPeople=function(){oldRender();const body=document.getElementById('peopleRows');if(!body)return;
+  const q=v10Norm(search?.value||''),status=document.getElementById('pStatus').value,season=document.getElementById('pSeasonFilter').value.trim(),cat=document.getElementById('pCategoryFilter').value;
+  const people=S.people.filter(p=>v10Group(p)==='general'&&(!season||p.season.includes(season))&&(!cat||p.team===cat)&&(!q||v10Norm([p.number,p.name,p.team,p.season,p.contact,p.dni].join(' ')).includes(q))&&(!status||(p.fee-v10Paid(p)<=.005?'paid':'pending')===status)).sort((a,b)=>Number(a.number||0)-Number(b.number||0));
+  const head=body.closest('table')?.querySelector('thead tr');
+  if(head){head.innerHTML='<th>Nº socio</th><th>Persona</th><th>Categoría</th><th>Temporada</th><th>Cuota</th><th>Pagado</th><th>Pendiente</th><th>Estado del pago</th><th>Fecha de pago</th><th>Forma de pago</th><th>Acciones</th>';}
+  body.innerHTML=people.map(p=>{const paid=v10Paid(p),due=Math.max(0,Number(p.fee)-paid),payments=S.moves.flatMap(m=>{if(m.type!=='income')return [];return [...(m.linkedId==='person:'+p.id?[{date:m.date,method:m.method}]:[]),...(m.allocations||[]).filter(a=>a.linkedId==='person:'+p.id).map(a=>({date:a.date||m.date,method:a.method||m.method}))]});payments.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+   const date=p.payDate||payments[0]?.date||'',method=payments[0]?.method||p.method||p.paymentMethod||'';
+   return `<tr data-record-id="${esc(p.id)}"><td>${esc(p.number??'')}</td><td>${esc(p.name)}</td><td>${esc(p.team)}</td><td>${esc(p.season)}</td><td>${euro(p.fee)}</td><td>${euro(paid)}</td><td>${euro(due)}</td><td>${due>.005?'Pendiente':'Pagado'}</td><td>${esc(date||'Sin fecha')}</td><td>${esc(method||'Sin indicar')}</td><td>${due>.005?`<button class="primary" data-payperson="${esc(p.id)}">Cobrar</button>`:''} <button type="button" data-payment-details="${esc(p.id)}">Ver historial</button> <button type="button" data-v11date="${esc(p.id)}">Fecha cobro</button></td></tr>`;
+  }).join('')||'<tr><td colspan="11">No hay socios con estos filtros.</td></tr>';
+  if(typeof checkRows==='function')checkRows();
+ };
+ renderPeople();
 })();
 </script>
 <script id="cayonSelectionRefreshFix">
