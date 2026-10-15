@@ -316,6 +316,65 @@ const ticketCard=Math.round(Math.min(card,tickets)*100)/100,raffleCard=Math.roun
 const postings=[{amount:tickets-ticketCard,account:$('gAccount').value,method:'Efectivo',category:'Por competiciones (taquillaje)',description:'Entradas — '+g.name},{amount:ticketCard,account:$('gCardAccount').value,method:'Tarjeta',category:'Por competiciones (taquillaje)',description:'Entradas — '+g.name},{amount:raffle-raffleCard,account:$('gAccount').value,method:'Efectivo',category:'Loterías y rifas',description:'Rifa — '+g.name},{amount:raffleCard,account:$('gCardAccount').value,method:'Tarjeta',category:'Loterías y rifas',description:'Rifa — '+g.name}];
 S.matches.push(g);for(const m of postings)if(m.amount>.005)addMove({type:'income',date:g.date,amount:Math.round(m.amount*100)/100,account:m.account,category:m.category,description:m.description,section:g.section,method:m.method,reference:'Cierre '+g.id,linkedId:'match:'+g.id});if(expenses>0)addMove({type:'expense',date:g.date,amount:expenses,account:$('gAccount').value,category:'Otros gastos de gestión corriente',description:'Gastos taquilla — '+g.name,section:g.section,reference:'Cierre '+g.id,linkedId:'match:'+g.id});save();render();e.target.reset();$('raffleBookRows').innerHTML='';$('gDate').value=today();refreshMatchSummary();alert('Cierre guardado. Entradas y rifa contabilizadas por separado.');};
 $('matchRows').addEventListener('click',e=>{const b=e.target.closest('[data-print-match]');if(!b)return;const g=S.matches.find(x=>x.id===b.dataset.printMatch);if(!g)return;const books=(g.raffleBooks||[]).map(x=>`<tr><td>${esc((x.color?x.color+' · ':'')+(x.number||'Sin número'))}</td><td>${x.sold}</td><td>${euro(x.price)}</td><td>${euro(x.sold*x.price)}</td></tr>`).join('');const w=window.open('','_blank');if(!w)return alert('Permite ventanas emergentes para imprimir.');w.document.write(`<html><head><meta charset="utf-8"><title>Cierre ${esc(g.name)}</title><style>body{font-family:Arial,sans-serif;margin:40px}h1{border-bottom:4px solid #222}table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #ccc;text-align:left}</style></head><body><h1>CD CAYÓN · CIERRE DE RECAUDACIÓN</h1><p><b>${esc(g.name)}</b> · ${esc(g.date)} · ${esc(g.section)}</p><table><tr><th>Concepto</th><th>Importe</th></tr><tr><td>Entradas (${g.sold||0})</td><td>${euro(g.ticketAmount??g.cash+g.card)}</td></tr><tr><td>Rifa</td><td>${euro(g.raffleAmount||0)}</td></tr><tr><th>Total recaudado</th><th>${euro(g.cash+g.card)}</th></tr><tr><td>Efectivo</td><td>${euro(g.cash)}</td></tr><tr><td>Tarjeta</td><td>${euro(g.card)}</td></tr><tr><td>Gastos</td><td>${euro(g.expenses)}</td></tr></table><h2>Talonarios de rifa</h2><table><tr><th>Talonario</th><th>Vendidas</th><th>Precio</th><th>Importe</th></tr>${books}</table><p>${esc(g.notes||'')}</p><p>Firma responsable: ____________________</p>
+
+<style>
+#cayonPaymentInfoDialog{position:fixed;inset:0;background:#0009;z-index:11000;display:none;align-items:center;justify-content:center;padding:16px}
+#cayonPaymentInfoDialog.open{display:flex}
+#cayonPaymentInfoDialog .panel{width:min(520px,100%);max-height:90vh;overflow:auto}
+</style>
+<div id="cayonPaymentInfoDialog" role="dialog" aria-modal="true" aria-labelledby="cayonPaymentInfoTitle">
+ <div class="panel"><h2 id="cayonPaymentInfoTitle">Fecha y forma de pago del socio</h2>
+ <p id="cayonPaymentInfoHelp" class="muted"></p>
+ <form id="cayonPaymentInfoForm"><div class="fields" style="grid-template-columns:1fr 1fr">
+ <label>Fecha de pago<input type="date" id="cayonPaymentInfoDate" required></label>
+ <label>Forma de pago<select id="cayonPaymentInfoMethod" required>
+ <option value="">Seleccionar</option><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Recibo domiciliado</option><option>Bizum</option><option>Cheque</option><option>Otro</option>
+ </select></label></div>
+ <div class="actions"><button type="submit" class="primary">Guardar fecha y forma</button><button type="button" id="cayonPaymentInfoCancel">Cancelar</button></div></form></div>
+</div>
+<script id="cayonRestoreSocioPaymentFields2026">
+(function(){
+ const dialog=document.getElementById('cayonPaymentInfoDialog');
+ const form=document.getElementById('cayonPaymentInfoForm');
+ let currentId=null;
+ function close(){dialog.classList.remove('open');currentId=null;}
+ document.getElementById('cayonPaymentInfoCancel').onclick=close;
+ dialog.addEventListener('click',e=>{if(e.target===dialog)close();});
+ document.addEventListener('click',e=>{
+  const button=e.target.closest('[data-cayon-payment-info]');
+  if(!button)return;
+  e.preventDefault();
+  const p=S.people.find(x=>x.id===button.dataset.cayonPaymentInfo);
+  if(!p)return;
+  const linked=S.moves.some(m=>m.linkedId==='person:'+p.id||(m.allocations||[]).some(a=>a.linkedId==='person:'+p.id));
+  if(linked){
+   alert('Este socio ya tiene un movimiento contable. Usa «Ver historial» para editar la fecha y forma del cobro en el movimiento, evitando que la ficha y la contabilidad tengan datos distintos.');
+   return;
+  }
+  currentId=p.id;
+  document.getElementById('cayonPaymentInfoTitle').textContent='Socio nº '+(p.number||'—')+' · '+p.name;
+  document.getElementById('cayonPaymentInfoHelp').textContent='Anotar la fecha y forma de una cuota histórica ya marcada como pagada. No genera otro ingreso ni cambia su importe.';
+  document.getElementById('cayonPaymentInfoDate').value=p.payDate||'';
+  const select=document.getElementById('cayonPaymentInfoMethod');
+  const method=p.method||p.paymentMethod||'';
+  select.value=[...select.options].some(o=>o.value===method)?method:'';
+  dialog.classList.add('open');
+ });
+ form.addEventListener('submit',e=>{
+  e.preventDefault();
+  const p=S.people.find(x=>x.id===currentId);
+  if(!p)return close();
+  if(S.moves.some(m=>m.linkedId==='person:'+p.id||(m.allocations||[]).some(a=>a.linkedId==='person:'+p.id))){
+   alert('Se ha encontrado un movimiento vinculado. Edita el cobro desde «Ver historial».');return;
+  }
+  const date=document.getElementById('cayonPaymentInfoDate').value;
+  const method=document.getElementById('cayonPaymentInfoMethod').value;
+  if(!date||!method)return alert('Indica fecha y forma de pago.');
+  p.payDate=date;p.method=method;p.paymentMethod=method;
+  save();close();render();
+ });
+})();
+</script>
 </body></html>`);w.document.close();w.focus();w.print();});
 
 
@@ -566,7 +625,66 @@ function v10Edit(id){const p=S.people.find(x=>x.id===id);if(!p)return;let name=p
 const v10RenderOriginal=render;render=function(){v10RenderOriginal();v10RenderGroup('honor');v10RenderGroup('empresa')};
 for(const g of ['honor','empresa']){const f=document.getElementById('form-'+g);f.onsubmit=e=>{e.preventDefault();const d=new FormData(f),number=Number(d.get('number')),season=v10Season(d.get('season'));if(S.people.some(p=>v10Group(p)===g&&p.number===number&&v10Season(p.season)===season))return alert('Ese número ya existe en esta categoría y temporada.');if(!confirm('¿Confirmas el alta de esta ficha?'))return;const fee=Number(d.get('fee'));const p={id:safeUUID(),kind:'Socio',team:V10_GROUP[g],number,name:String(d.get('name')).trim(),dni:String(d.get('dni')),season,fee,contact:String(d.get('contact')),method:String(d.get('method')),payDate:String(d.get('payDate')),importedPaid:0};if(d.get('status')==='paid'){if(!d.get('account'))return alert('Selecciona cuenta destino');S.people.push(p);addMove({type:'income',date:p.payDate||today(),amount:fee,account:String(d.get('account')),category:'Abonados y socios',description:'Cuota '+V10_GROUP[g]+' — '+p.name,thirdParty:p.name,section:'Club general',method:p.method||'Otro',linkedId:'person:'+p.id});}else S.people.push(p);save();f.reset();render()};for(const id of ['search-'+g,'season-'+g,'status-'+g])document.getElementById(id).addEventListener('input',()=>v10RenderGroup(g));document.getElementById('rows-'+g).onclick=e=>{let b=e.target.closest('[data-v10pay]');if(b)collectPayment('person',b.dataset.v10pay);b=e.target.closest('[data-v10edit]');if(b)v10Edit(b.dataset.v10edit)}}
 document.querySelectorAll('[data-import]').forEach(b=>b.onclick=()=>v10Import(b.dataset.import));
-document.querySelectorAll('[data-print]').forEach(b=>b.onclick=()=>{const g=b.dataset.print,body=document.getElementById('tab-'+g).querySelector('.tablewrap').outerHTML;const w=window.open('','_blank');if(!w)return alert('Permite ventanas emergentes para imprimir.');w.document.write('<html><head><meta charset="utf-8"><title>Socios '+g+'</title><style>body{font:12px Arial}table{width:100%;border-collapse:collapse}td,th{border:1px solid #aaa;padding:5px}@page{size:A4 landscape}</style></head><body><h2>CD Cayón · '+g+'</h2>'+body+'</body></html>');w.document.close();w.focus();w.print()});
+document.querySelectorAll('[data-print]').forEach(b=>b.onclick=()=>{const g=b.dataset.print,body=document.getElementById('tab-'+g).querySelector('.tablewrap').outerHTML;const w=window.open('','_blank');if(!w)return alert('Permite ventanas emergentes para imprimir.');w.document.write('<html><head><meta charset="utf-8"><title>Socios '+g+'</title><style>body{font:12px Arial}table{width:100%;border-collapse:collapse}td,th{border:1px solid #aaa;padding:5px}@page{size:A4 landscape}</style></head><body><h2>CD Cayón · '+g+'</h2>'+body+'
+<style>
+#cayonPaymentInfoDialog{position:fixed;inset:0;background:#0009;z-index:11000;display:none;align-items:center;justify-content:center;padding:16px}
+#cayonPaymentInfoDialog.open{display:flex}
+#cayonPaymentInfoDialog .panel{width:min(520px,100%);max-height:90vh;overflow:auto}
+</style>
+<div id="cayonPaymentInfoDialog" role="dialog" aria-modal="true" aria-labelledby="cayonPaymentInfoTitle">
+ <div class="panel"><h2 id="cayonPaymentInfoTitle">Fecha y forma de pago del socio</h2>
+ <p id="cayonPaymentInfoHelp" class="muted"></p>
+ <form id="cayonPaymentInfoForm"><div class="fields" style="grid-template-columns:1fr 1fr">
+ <label>Fecha de pago<input type="date" id="cayonPaymentInfoDate" required></label>
+ <label>Forma de pago<select id="cayonPaymentInfoMethod" required>
+ <option value="">Seleccionar</option><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Recibo domiciliado</option><option>Bizum</option><option>Cheque</option><option>Otro</option>
+ </select></label></div>
+ <div class="actions"><button type="submit" class="primary">Guardar fecha y forma</button><button type="button" id="cayonPaymentInfoCancel">Cancelar</button></div></form></div>
+</div>
+<script id="cayonRestoreSocioPaymentFields2026">
+(function(){
+ const dialog=document.getElementById('cayonPaymentInfoDialog');
+ const form=document.getElementById('cayonPaymentInfoForm');
+ let currentId=null;
+ function close(){dialog.classList.remove('open');currentId=null;}
+ document.getElementById('cayonPaymentInfoCancel').onclick=close;
+ dialog.addEventListener('click',e=>{if(e.target===dialog)close();});
+ document.addEventListener('click',e=>{
+  const button=e.target.closest('[data-cayon-payment-info]');
+  if(!button)return;
+  e.preventDefault();
+  const p=S.people.find(x=>x.id===button.dataset.cayonPaymentInfo);
+  if(!p)return;
+  const linked=S.moves.some(m=>m.linkedId==='person:'+p.id||(m.allocations||[]).some(a=>a.linkedId==='person:'+p.id));
+  if(linked){
+   alert('Este socio ya tiene un movimiento contable. Usa «Ver historial» para editar la fecha y forma del cobro en el movimiento, evitando que la ficha y la contabilidad tengan datos distintos.');
+   return;
+  }
+  currentId=p.id;
+  document.getElementById('cayonPaymentInfoTitle').textContent='Socio nº '+(p.number||'—')+' · '+p.name;
+  document.getElementById('cayonPaymentInfoHelp').textContent='Anotar la fecha y forma de una cuota histórica ya marcada como pagada. No genera otro ingreso ni cambia su importe.';
+  document.getElementById('cayonPaymentInfoDate').value=p.payDate||'';
+  const select=document.getElementById('cayonPaymentInfoMethod');
+  const method=p.method||p.paymentMethod||'';
+  select.value=[...select.options].some(o=>o.value===method)?method:'';
+  dialog.classList.add('open');
+ });
+ form.addEventListener('submit',e=>{
+  e.preventDefault();
+  const p=S.people.find(x=>x.id===currentId);
+  if(!p)return close();
+  if(S.moves.some(m=>m.linkedId==='person:'+p.id||(m.allocations||[]).some(a=>a.linkedId==='person:'+p.id))){
+   alert('Se ha encontrado un movimiento vinculado. Edita el cobro desde «Ver historial».');return;
+  }
+  const date=document.getElementById('cayonPaymentInfoDate').value;
+  const method=document.getElementById('cayonPaymentInfoMethod').value;
+  if(!date||!method)return alert('Indica fecha y forma de pago.');
+  p.payDate=date;p.method=method;p.paymentMethod=method;
+  save();close();render();
+ });
+})();
+</script>
+</body></html>');w.document.close();w.focus();w.print()});
 document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>{const g=b.dataset.export,arr=S.people.filter(p=>v10Group(p)===g),csv=[['Nº socio','Nombre','DNI/CIF','Temporada','Cuota','Pagado','Pendiente','Contacto'],...arr.map(p=>[p.number,p.name,p.dni,p.season,p.fee,v10Paid(p),Math.max(0,p.fee-v10Paid(p)),p.contact])];dl('cd-cayon-'+g+'.csv','\ufeff'+csv.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv;charset=utf-8')});
 render();
 </script>
@@ -957,7 +1075,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   if(head){head.innerHTML='<th>Nº socio</th><th>Persona</th><th>Categoría</th><th>Temporada</th><th>Cuota</th><th>Pagado</th><th>Pendiente</th><th>Estado del pago</th><th>Fecha de pago</th><th>Forma de pago</th><th>Acciones</th>';}
   body.innerHTML=people.map(p=>{const paid=v10Paid(p),due=Math.max(0,Number(p.fee)-paid),payments=S.moves.flatMap(m=>{if(m.type!=='income')return [];return [...(m.linkedId==='person:'+p.id?[{date:m.date,method:m.method}]:[]),...(m.allocations||[]).filter(a=>a.linkedId==='person:'+p.id).map(a=>({date:a.date||m.date,method:a.method||m.method}))]});payments.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
    const date=p.payDate||payments[0]?.date||'',method=payments[0]?.method||p.method||p.paymentMethod||'';
-   return `<tr data-record-id="${esc(p.id)}"><td>${esc(p.number??'')}</td><td>${esc(p.name)}</td><td>${esc(p.team)}</td><td>${esc(p.season)}</td><td>${euro(p.fee)}</td><td>${euro(paid)}</td><td>${euro(due)}</td><td>${due>.005?'Pendiente':'Pagado'}</td><td>${esc(date||'Sin fecha')}</td><td>${esc(method||'Sin indicar')}</td><td>${due>.005?`<button class="primary" data-payperson="${esc(p.id)}">Cobrar</button>`:''} <button type="button" data-payment-details="${esc(p.id)}">Ver historial</button> <button type="button" data-v11date="${esc(p.id)}">Fecha cobro</button></td></tr>`;
+   return `<tr data-record-id="${esc(p.id)}"><td>${esc(p.number??'')}</td><td>${esc(p.name)}</td><td>${esc(p.team)}</td><td>${esc(p.season)}</td><td>${euro(p.fee)}</td><td>${euro(paid)}</td><td>${euro(due)}</td><td>${due>.005?'Pendiente':'Pagado'}</td><td>${esc(date||'Sin fecha')}</td><td>${esc(method||'Sin indicar')}</td><td>${due>.005?`<button class="primary" data-payperson="${esc(p.id)}">Cobrar</button>`:''} <button type="button" data-payment-details="${esc(p.id)}">Ver historial</button> <button type="button" data-cayon-payment-info="${esc(p.id)}">Fecha y forma de pago</button></td></tr>`;
   }).join('')||'<tr><td colspan="11">No hay socios con estos filtros.</td></tr>';
   if(typeof checkRows==='function')checkRows();
  };
@@ -1191,4 +1309,63 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  function attach(input){if(!input||input.dataset.cayonSpin)return;input.dataset.cayonSpin='1';const wrap=document.createElement('span');wrap.style.cssText='display:flex;gap:4px;align-items:center';input.parentNode.insertBefore(wrap,input);wrap.appendChild(input);const arrows=document.createElement('span');arrows.style.cssText='display:flex;flex-direction:column;gap:2px;flex:0 0 32px';for(const [sign,label] of [[1,'▲'],[-1,'▼']]){const b=document.createElement('button');b.type='button';b.textContent=label;b.title=sign===1?'Aumentar número de socio':'Disminuir número de socio';b.style.cssText='padding:0;height:20px;min-width:30px;font-size:11px';b.onclick=()=>{const n=Math.max(1,(Number(input.value)||1)+sign);input.value=n;input.dispatchEvent(new Event('input',{bubbles:true}));};arrows.appendChild(b)}wrap.appendChild(arrows)}
  attach(document.getElementById('pNumber'));document.querySelectorAll('#form-honor input[name="number"],#form-empresa input[name="number"]').forEach(attach);
 })();
-</script></body></html>
+</script>
+<style>
+#cayonPaymentInfoDialog{position:fixed;inset:0;background:#0009;z-index:11000;display:none;align-items:center;justify-content:center;padding:16px}
+#cayonPaymentInfoDialog.open{display:flex}
+#cayonPaymentInfoDialog .panel{width:min(520px,100%);max-height:90vh;overflow:auto}
+</style>
+<div id="cayonPaymentInfoDialog" role="dialog" aria-modal="true" aria-labelledby="cayonPaymentInfoTitle">
+ <div class="panel"><h2 id="cayonPaymentInfoTitle">Fecha y forma de pago del socio</h2>
+ <p id="cayonPaymentInfoHelp" class="muted"></p>
+ <form id="cayonPaymentInfoForm"><div class="fields" style="grid-template-columns:1fr 1fr">
+ <label>Fecha de pago<input type="date" id="cayonPaymentInfoDate" required></label>
+ <label>Forma de pago<select id="cayonPaymentInfoMethod" required>
+ <option value="">Seleccionar</option><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Recibo domiciliado</option><option>Bizum</option><option>Cheque</option><option>Otro</option>
+ </select></label></div>
+ <div class="actions"><button type="submit" class="primary">Guardar fecha y forma</button><button type="button" id="cayonPaymentInfoCancel">Cancelar</button></div></form></div>
+</div>
+<script id="cayonRestoreSocioPaymentFields2026">
+(function(){
+ const dialog=document.getElementById('cayonPaymentInfoDialog');
+ const form=document.getElementById('cayonPaymentInfoForm');
+ let currentId=null;
+ function close(){dialog.classList.remove('open');currentId=null;}
+ document.getElementById('cayonPaymentInfoCancel').onclick=close;
+ dialog.addEventListener('click',e=>{if(e.target===dialog)close();});
+ document.addEventListener('click',e=>{
+  const button=e.target.closest('[data-cayon-payment-info]');
+  if(!button)return;
+  e.preventDefault();
+  const p=S.people.find(x=>x.id===button.dataset.cayonPaymentInfo);
+  if(!p)return;
+  const linked=S.moves.some(m=>m.linkedId==='person:'+p.id||(m.allocations||[]).some(a=>a.linkedId==='person:'+p.id));
+  if(linked){
+   alert('Este socio ya tiene un movimiento contable. Usa «Ver historial» para editar la fecha y forma del cobro en el movimiento, evitando que la ficha y la contabilidad tengan datos distintos.');
+   return;
+  }
+  currentId=p.id;
+  document.getElementById('cayonPaymentInfoTitle').textContent='Socio nº '+(p.number||'—')+' · '+p.name;
+  document.getElementById('cayonPaymentInfoHelp').textContent='Anotar la fecha y forma de una cuota histórica ya marcada como pagada. No genera otro ingreso ni cambia su importe.';
+  document.getElementById('cayonPaymentInfoDate').value=p.payDate||'';
+  const select=document.getElementById('cayonPaymentInfoMethod');
+  const method=p.method||p.paymentMethod||'';
+  select.value=[...select.options].some(o=>o.value===method)?method:'';
+  dialog.classList.add('open');
+ });
+ form.addEventListener('submit',e=>{
+  e.preventDefault();
+  const p=S.people.find(x=>x.id===currentId);
+  if(!p)return close();
+  if(S.moves.some(m=>m.linkedId==='person:'+p.id||(m.allocations||[]).some(a=>a.linkedId==='person:'+p.id))){
+   alert('Se ha encontrado un movimiento vinculado. Edita el cobro desde «Ver historial».');return;
+  }
+  const date=document.getElementById('cayonPaymentInfoDate').value;
+  const method=document.getElementById('cayonPaymentInfoMethod').value;
+  if(!date||!method)return alert('Indica fecha y forma de pago.');
+  p.payDate=date;p.method=method;p.paymentMethod=method;
+  save();close();render();
+ });
+})();
+</script>
+</body></html>
