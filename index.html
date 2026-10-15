@@ -189,8 +189,19 @@ const $=x=>document.getElementById(x), euro=n=>new Intl.NumberFormat('es-ES',{st
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const SAFE_KEY=KEY+':snapshots', AUDIT_KEY=KEY+':audit', TRASH_KEY=KEY+':trash';
 function localArray(key){try{let a=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(a)?a:[]}catch{return []}}
-function logAction(action,details){let a=localArray(AUDIT_KEY);a.push({at:new Date().toISOString(),action,details});localStorage.setItem(AUDIT_KEY,JSON.stringify(a.slice(-500)));}
-function save(){const old=localStorage.getItem(KEY);if(old){let copies=localArray(SAFE_KEY);if(!copies.length||Date.now()-copies[copies.length-1].at>300000){copies.push({at:Date.now(),data:old});localStorage.setItem(SAFE_KEY,JSON.stringify(copies.slice(-12)));}}localStorage.setItem(KEY,JSON.stringify(S));}
+function logAction(action,details){try{let a=localArray(AUDIT_KEY);a.push({at:new Date().toISOString(),action,details});localStorage.setItem(AUDIT_KEY,JSON.stringify(a.slice(-100)));}catch(e){console.warn('Historial local lleno',e);}}
+function save(){
+ // Supabase es el almacenamiento principal. La caché local nunca bloquea un cobro.
+ // No crear instantáneas completas repetidas: llenaban localStorage en pocos cobros.
+ try { localStorage.setItem(KEY, JSON.stringify(S)); }
+ catch(e) {
+  if(e?.name!=='QuotaExceededError'&&e?.code!==22&&e?.code!==1014)throw e;
+  console.warn('Caché local llena; el guardado en Supabase continuará.',e);
+  // Únicamente eliminamos instantáneas automáticas auxiliares, nunca datos ni papelera.
+  try { localStorage.removeItem(SAFE_KEY); localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e2) { console.warn('No cabe caché local; los datos se enviarán a Supabase.',e2); }
+ }
+}
 function safeRender(){let t=$('trashRows'),a=$('auditRows');if(!t||!a)return;let trash=localArray(TRASH_KEY);t.innerHTML=trash.length?trash.slice().reverse().map(x=>`<div class="accountrow"><span>${esc(x.record.description)} · ${euro(x.record.amount)}</span><span class="small muted">${esc(x.deletedAt)}</span><button data-restore="${esc(x.trashId)}">Recuperar</button></div>`).join(''):'<p class="muted">No hay movimientos en la papelera.</p>';a.innerHTML=localArray(AUDIT_KEY).slice(-15).reverse().map(x=>`<div class="small" style="padding:5px;border-bottom:1px solid #eee">${esc(x.at)} — ${esc(x.action)}: ${esc(x.details)}</div>`).join('')||'<p class="muted">Sin operaciones registradas.</p>';}
 
 function load(){try{let x=JSON.parse(localStorage.getItem(KEY));if(x&&x.accounts&&x.moves){S={...S,...x};if(!S.accounts.some(a=>a.id==='bank2'))S.accounts.splice(1,0,{id:'bank2',name:'Segundo banco',opening:0})}}catch(e){}}
@@ -431,7 +442,7 @@ function newSubmit(form,prefix,kind){form.addEventListener('submit',ev=>{ev.prev
  if(kind==='Socio'&&el('pNumber').value&&S.people.some(p=>p.kind==='Socio'&&p.season===season&&p.number===Number(el('pNumber').value))){alert('Ya existe ese número de socio en esta temporada.');return;}
  if(!confirm(`¿Confirmas el alta de ${kind.toLowerCase()} ${name} para ${season}, cuota ${euro(fee)} y estado ${state==='paid'?'PAGADO':'IMPAGADO'}?`))return;
  const id=safeUUID(),obj={id,kind,name,season,team,fee,contact:'',number:kind==='Socio'?Number(el('pNumber').value)||null:null,dni:kind==='Socio'?el('pDni').value.trim():'',sibling:kind==='Jugador'&&el('jpSibling').value==='second',paymentMethod:state==='paid'?method:'',paymentDate:state==='paid'?date:'',paymentAccount:state==='paid'?account:''};
- S.people.push(obj);if(state==='paid'&&fee>0)addMove({type:'income',date,amount:fee,account,category:kind==='Socio'?'Abonados y socios':'Cuotas de fútbol base y campus',description:'Cuota '+kind.toLowerCase()+' — '+name,thirdParty:name,section:kind==='Socio'?'Club general':'Categorías inferiores',method,linkedId:'person:'+id});try{save();}catch(error){console.error('Error al guardar ficha',error);alert('No se ha podido guardar la ficha: '+(error?.message||error));return;}
+ S.people.push(obj);if(state==='paid'&&fee>0)addMove({type:'income',date,amount:fee,account,category:kind==='Socio'?'Abonados y socios':'Cuotas de fútbol base y campus',description:'Cuota '+kind.toLowerCase()+' — '+name,thirdParty:name,section:kind==='Socio'?'Club general':'Categorías inferiores',method,linkedId:'person:'+id});try{save();}catch(error){S.people=S.people.filter(p=>p.id!==id);S.moves=S.moves.filter(m=>m.linkedId!=='person:'+id);console.error('Error al guardar ficha',error);alert('No se ha podido guardar la ficha: '+(error?.message||error));return;}
  form.reset();el(prefix+'Season').value='2026/2027';if(kind==='Jugador'){el('jpTeam').innerHTML=opts(teams);el('jpFee').value=120;}else updatePersonFields(true);
  accountUpdaters.forEach(fn=>fn());
  try{render();}catch(error){console.error('Error al actualizar la pantalla',error);alert('La ficha se ha guardado localmente, pero ha fallado la actualización de pantalla. No la introduzcas de nuevo. Error: '+(error?.message||error));return;}
@@ -639,7 +650,7 @@ let client,ready=false,writing=false,pending=false,lastSynced='',revision=0;
 const localSave=save;
 // Mantiene copias locales, pero nunca muestra la app sin autenticar.
 function snapshot(){return JSON.stringify(S)}
-function setState(raw){const x=typeof raw==='string'?JSON.parse(raw):raw;if(!x||!Array.isArray(x.accounts)||!Array.isArray(x.moves)||!Array.isArray(x.people))throw Error('Datos remotos incompletos');S={...S,...x};localStorage.setItem(KEY,JSON.stringify(S));render();if(typeof analysis==='function')analysis();if(typeof safeRender==='function')safeRender();}
+function setState(raw){const x=typeof raw==='string'?JSON.parse(raw):raw;if(!x||!Array.isArray(x.accounts)||!Array.isArray(x.moves)||!Array.isArray(x.people))throw Error('Datos remotos incompletos');S={...S,...x};try{localSave()}catch(e){console.warn('No cabe caché local de datos remotos; se usarán los datos de Supabase',e)}render();if(typeof analysis==='function')analysis();if(typeof safeRender==='function')safeRender();}
 async function flush(){
  if(!ready||writing||!pending)return;
  writing=true;pending=false;const value=snapshot(),at=revision;
@@ -650,9 +661,14 @@ async function flush(){
   lastSynced=value;
   say('✓ Guardado en Supabase · '+new Date().toLocaleTimeString('es-ES'));
  }catch(e){pending=true;say('⚠ No se ha guardado en internet: '+e.message+' · Conserva una copia JSON');}
- finally{writing=false;if(pending&&revision!==at&&navigator.onLine)setTimeout(flush,500)}
+ finally{writing=false;if(pending&&navigator.onLine)setTimeout(flush,1000)}
 }
-save=function(){localSave();if(ready){revision++;pending=true;flush()}};
+save=function(){
+ if(!ready){throw Error('No hay sesión de escritura en Supabase. No se ha confirmado el cobro.')}
+ // Intentar caché local, pero jamás impedir el envío remoto por falta de espacio.
+ try{localSave()}catch(e){console.warn('Error de caché local',e)}
+ revision++;pending=true;flush();
+};
 async function start(){
  if(!window.supabase?.createClient)throw Error('No se ha podido cargar la conexión. Comprueba internet.');
  client=window.supabase.createClient(URL,PUBLISHABLE,{auth:{persistSession:false,autoRefreshToken:true}});
