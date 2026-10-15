@@ -215,8 +215,8 @@ function addMove({subcategory="",type='income',date=today(),amount,account,categ
    const key=[date,account,method,section,group,sub].join('||');
    const eligible=m=>m.type==='income'&&m.date===date&&m.account===account&&m.method===method&&m.section===section&&m.linkedId?.startsWith('person:')&&(()=>{const pp=S.people.find(p=>p.id===m.linkedId.slice(7));return pp&&(pp.kind==='Jugador'?'Categorías inferiores':pp.team==='Socio de honor'?'Socios de Honor':pp.team==='Empresa'?'Socios Empresa':'Socios generales')===group&&(pp.team||'Sin categoría')===sub})()&&!m.allocations;
    let target=S.moves.find(m=>m.batchKey===key);
-   if(!target){const prior=S.moves.find(eligible);if(prior){prior.allocations=[{linkedId:prior.linkedId,amount:prior.amount}];prior.linkedId='';prior.batchKey=key;prior.category=group;prior.subcategory=sub;prior.description='Cobros agrupados · '+group+' · '+sub;prior.thirdParty='Varios socios';target=prior;}}
-   if(target){target.amount=Math.round((Number(target.amount)+sum)*100)/100;target.allocations.push({linkedId,amount:sum});target.description='Cobros agrupados · '+group+' · '+sub+' ('+target.allocations.length+')';return;}
+   if(!target){const prior=S.moves.find(eligible);if(prior){prior.allocations=[{linkedId:prior.linkedId,amount:prior.amount,date:prior.date,method:prior.method}];prior.linkedId='';prior.batchKey=key;prior.category=group;prior.subcategory=sub;prior.description='Cobros agrupados · '+group+' · '+sub;prior.thirdParty='Varios socios';target=prior;}}
+   if(target){if(!Array.isArray(target.allocations))target.allocations=[];target.amount=Math.round((Number(target.amount)+sum)*100)/100;target.allocations.push({linkedId,amount:sum,date,method});target.description='Cobros agrupados · '+group+' · '+sub+' ('+target.allocations.length+')';return;}
    S.moves.push({id:safeUUID(),type,date,amount:sum,account,category:group,subcategory:sub,description:'Cobros · '+group+' · '+sub,thirdParty:person.name,section,method,reference,toAccount,linkedId,created:Date.now()});return;
   }
  }
@@ -273,13 +273,19 @@ function collectPayment(kind,id){
  modal.classList.remove('hidden');
  document.getElementById('cobroForm').onsubmit=function(e){e.preventDefault();
   const amount=Number(document.getElementById('cobroAmount').value),date=document.getElementById('cobroDate').value,method=document.getElementById('cobroMethod').value,account=document.getElementById('cobroAccount').value;
-  if(!date||!Number.isFinite(amount)||amount<=0||amount>due+.005)return alert('Comprueba fecha e importe; no puede superar el pendiente.');
+  const pendingNow=Math.max(0,(kind==='person'?obj.fee:obj.amount)-paidFor(kind,id));
+  if(pendingNow<=.005)return alert('Esta cuota ya figura cobrada. No se registrará un ingreso duplicado.');
+  if(!date||!Number.isFinite(amount)||amount<=0||amount>pendingNow+.005)return alert('Comprueba fecha e importe; no puede superar el pendiente actual de '+euro(pendingNow)+'.');
   if(kind==='person'&&obj.kind==='Socio'&&Math.abs(amount-due)>.005)return alert('La cuota de socio se cobra completa, no a plazos.');
   if(!S.accounts.some(a=>a.id===account))return alert('Cuenta no válida.');
   if(!confirm('Confirmar cobro de '+euro(amount)+' a '+obj.name+' el '+date+' mediante '+method+'?'))return;
   const section=kind==='sponsor'?(obj.kind.includes('3.ª RFEF')?'3.ª RFEF':obj.kind.includes('categorías inferiores')?'Categorías inferiores':'Club general'):sectionForTeam(obj.team);
   addMove({type:'income',amount,date,account,category:kind==='person'?(obj.kind==='Socio'?'Abonados y socios':'Cuotas de fútbol base y campus'):'Patrocinio y publicidad',description:'Cobro '+(kind==='person'?'cuota':'patrocinio')+' — '+obj.name,thirdParty:obj.name,section,method,linkedId:kind+':'+id});
-  save();render();modal.classList.add('hidden');
+  // Primero persistir y cerrar el formulario: un error posterior de visualización
+  // no debe dejar el cobro aparentemente pendiente ni provocar una repetición.
+  try{save();}catch(error){console.error('No se pudo guardar el cobro',error);alert('ERROR: no se ha podido guardar el cobro. No vuelvas a introducirlo sin comprobar los movimientos.');return;}
+  modal.classList.add('hidden');
+  try{render();}catch(error){console.error('Cobro guardado, fallo al actualizar las tablas',error);alert('El cobro se ha guardado, pero ha fallado la actualización de la pantalla. No repitas el cobro. Actualiza la página y comprueba el movimiento.');}
  };
 }
 $('peopleRows').onclick=e=>{let b=e.target.closest('[data-payperson]');if(b)collectPayment('person',b.dataset.payperson)};
@@ -425,7 +431,11 @@ function newSubmit(form,prefix,kind){form.addEventListener('submit',ev=>{ev.prev
  if(kind==='Socio'&&el('pNumber').value&&S.people.some(p=>p.kind==='Socio'&&p.season===season&&p.number===Number(el('pNumber').value))){alert('Ya existe ese número de socio en esta temporada.');return;}
  if(!confirm(`¿Confirmas el alta de ${kind.toLowerCase()} ${name} para ${season}, cuota ${euro(fee)} y estado ${state==='paid'?'PAGADO':'IMPAGADO'}?`))return;
  const id=safeUUID(),obj={id,kind,name,season,team,fee,contact:'',number:kind==='Socio'?Number(el('pNumber').value)||null:null,dni:kind==='Socio'?el('pDni').value.trim():'',sibling:kind==='Jugador'&&el('jpSibling').value==='second',paymentMethod:state==='paid'?method:'',paymentDate:state==='paid'?date:'',paymentAccount:state==='paid'?account:''};
- S.people.push(obj);if(state==='paid'&&fee>0)addMove({type:'income',date,amount:fee,account,category:kind==='Socio'?'Abonados y socios':'Cuotas de fútbol base y campus',description:'Cuota '+kind.toLowerCase()+' — '+name,thirdParty:name,section:kind==='Socio'?'Club general':'Categorías inferiores',method,linkedId:'person:'+id});save();render();form.reset();el(prefix+'Season').value='2026/2027';if(kind==='Jugador'){el('jpTeam').innerHTML=opts(teams);el('jpFee').value=120;}else updatePersonFields(true);accountUpdaters.forEach(fn=>fn());alert('Ficha guardada correctamente.');},true)}
+ S.people.push(obj);if(state==='paid'&&fee>0)addMove({type:'income',date,amount:fee,account,category:kind==='Socio'?'Abonados y socios':'Cuotas de fútbol base y campus',description:'Cuota '+kind.toLowerCase()+' — '+name,thirdParty:name,section:kind==='Socio'?'Club general':'Categorías inferiores',method,linkedId:'person:'+id});try{save();}catch(error){console.error('Error al guardar ficha',error);alert('No se ha podido guardar la ficha: '+(error?.message||error));return;}
+ form.reset();el(prefix+'Season').value='2026/2027';if(kind==='Jugador'){el('jpTeam').innerHTML=opts(teams);el('jpFee').value=120;}else updatePersonFields(true);
+ accountUpdaters.forEach(fn=>fn());
+ try{render();}catch(error){console.error('Error al actualizar la pantalla',error);alert('La ficha se ha guardado localmente, pero ha fallado la actualización de pantalla. No la introduzcas de nuevo. Error: '+(error?.message||error));return;}
+ alert('Ficha guardada correctamente.');},true)}
 newSubmit(member,'p','Socio');newSubmit(player,'jp','Jugador');
 // Dashboard: analytical tables and bar charts with live data, no external dependencies.
 const panel=document.createElement('div');panel.className='panel';panel.innerHTML='<h2>Panel de análisis · temporada en curso</h2><div class="filters"><label>Temporada<select id="analysisSeason"></select></label><label>Sección<select id="analysisSection"><option value="">Todas</option><option>3.ª RFEF</option><option>Categorías inferiores</option><option>Club general</option></select></label></div><div id="analysisCards" class="cards"></div><div class="grid2"><div><h3>Jugadores por equipo · pagados / impagados</h3><div id="teamChart"></div></div><div><h3>Socios por categoría</h3><div id="memberChart"></div></div><div><h3>Ingresos por medio de pago</h3><div id="methodChart"></div></div><div><h3>Ingresos y gastos por sección</h3><div id="sectionChart"></div></div></div><div class="actions"><button type="button" id="printAnalysis">Imprimir informe</button><button type="button" id="saveAnalysis">Guardar informe en archivo</button></div>';
@@ -759,7 +769,7 @@ start().catch(e=>document.getElementById('cayonLoginMessage').textContent=e.mess
  }
  function batch(m){const items=(m.allocations||[]).map(a=>({a,p:person((a.linkedId||'').replace('person:',''))}));
  const body=items.length?items.map(({a,p})=>`<tr><td>${esc(p?.number||'—')}</td><td>${esc(p?.name||'Ficha no encontrada')}</td><td>${money(a.amount)}</td><td>${esc(a.date||m.date)}</td><td>${esc(a.method||m.method)}</td><td><button data-v24-edit="${esc(m.id)}" data-v24-person="${esc(p?.id||'')}">Editar socio</button></td></tr>`).join(''):`<tr><td colspan="6">${esc(m.thirdParty||'Movimiento sin detalle de socios')}</td></tr>`;
- open('Asiento · '+m.date+' · '+money(m.amount),`<div class="v24Summary"><span>Cuenta: <b>${esc(accName(m.account))}</b></span><span>Forma: <b>${esc(m.method||'—')}</b></span><span>Concepto: <b>${esc(m.category||'—')} / ${esc(m.subcategory||'—')}</b></span></div><div class="v24Help">${items.length?'Los cobros están agrupados por fecha, cuenta, forma de pago y categoría. Edita un socio para mover su importe a otro asiento y recalcular ambos totales.':'Este asiento no tiene un desglose de socios vinculado; no se puede identificar automáticamente quién lo compone.'}</div><div class="tablewrap"><table><thead><tr><th>Nº</th><th>Socio</th><th>Importe</th><th>Fecha</th><th>Forma</th><th></th></tr></thead><tbody>${body}</tbody></table></div><p><b>Total del asiento: ${money(m.amount)}</b></p>`);
+ open('Asiento · '+m.date+' · '+money(m.amount),`<div class="v24Summary"><span>Cuenta: <b>${esc(accName(m.account))}</b></span><span>Forma: <b>${esc(m.method||'—')}</b></span><span>Concepto: <b>${esc(m.category||'—')} / ${esc(m.subcategory||'—')}</b></span></div><div class="v24Help">${items.length?'Los cobros están agrupados por fecha, cuenta, forma de pago y categoría. Edita un pagador para mover su importe a otro asiento y recalcular ambos totales.':'Este asiento no tiene un desglose de socios vinculado; no se puede identificar automáticamente quién lo compone.'}</div><div class="tablewrap"><table><thead><tr><th>Nº</th><th>Socio</th><th>Importe</th><th>Fecha</th><th>Forma</th><th></th></tr></thead><tbody>${body}</tbody></table></div><p><b>Total del asiento: ${money(m.amount)}</b></p>`);
  }
  function edit(m,id){const p=person(id);if(!p)return;const a=(m.allocations||[]).find(x=>x.linkedId==='person:'+id);if(!a&&m.linkedId!=='person:'+id)return alert('No se encontró el cobro vinculado.');const amount=Number(a?.amount||m.amount);
  open('Editar cobro · Socio '+(p.number||'—'),`<div class="v24Help">Cambiar fecha, forma o cuenta trasladará este cobro al asiento correspondiente. No se creará un segundo ingreso. Importe fijo de la cuota: <b>${money(amount)}</b>.</div><form id="v24EditForm"><div class="fields"><label>Fecha de pago<input required type="date" id="v24Date" value="${esc(a?.date||m.date)}"></label><label>Forma de pago<select id="v24Method">${methodOpts(a?.method||m.method)}</select></label><label>Cuenta de destino<select id="v24Account">${accOpts(m.account)}</select></label></div><div class="v24Actions"><button class="primary" type="submit">Guardar y recalcular asientos</button><button type="button" id="v24Cancel">Cancelar</button></div></form>`);
@@ -772,7 +782,7 @@ start().catch(e=>document.getElementById('cayonLoginMessage').textContent=e.mess
  };
  }
  // Enhance existing movement listing, preserving original filters.
- const baseRender=renderMoves;renderMoves=function(){baseRender();$id('moveRows').querySelectorAll('tr').forEach(tr=>{const b=tr.querySelector('[data-delmove]');if(!b)return;const m=S.moves.find(x=>x.id===b.dataset.delmove);if(!m)return;const cell=b.parentElement;const view=document.createElement('button');view.type='button';view.className='v24Link';view.textContent=(m.allocations||[]).length?'Ver socios ('+m.allocations.length+')':'Ver detalle';view.dataset.v24Move=m.id;cell.prepend(view);});};
+ const baseRender=renderMoves;renderMoves=function(){baseRender();$id('moveRows').querySelectorAll('tr').forEach(tr=>{const b=tr.querySelector('[data-delmove]');if(!b)return;const m=S.moves.find(x=>x.id===b.dataset.delmove);if(!m)return;const cell=b.parentElement;const view=document.createElement('button');view.type='button';view.className='v24Link';view.textContent=(m.allocations||[]).length?'Ver pagadores ('+m.allocations.length+')':'Ver detalle';view.dataset.v24Move=m.id;cell.prepend(view);});};
  document.addEventListener('click',e=>{const b=e.target.closest('[data-payment-details],[data-v24-move],[data-v24-edit]');if(!b)return;e.preventDefault();if(b.dataset.paymentDetails)details(b.dataset.paymentDetails);else if(b.dataset.v24Move){const m=S.moves.find(x=>x.id===b.dataset.v24Move);if(m)batch(m)}else if(b.dataset.v24Edit){const m=S.moves.find(x=>x.id===b.dataset.v24Edit);if(m)edit(m,b.dataset.v24Person)}},true);
  // Keep legacy registration visible for already-paid imported records; do not silently duplicate.
  const origPeople=renderPeople;renderPeople=function(){origPeople();$id('peopleRows').querySelectorAll('tr').forEach(tr=>{const old=tr.querySelector('[data-legacy-pay]'),view=tr.querySelector('[data-payment-details]');if(old){const p=person(old.dataset.legacyPay);if(p){old.textContent='Registrar datos de pago';const v=document.createElement('button');v.type='button';v.textContent='Ver historial';v.dataset.paymentDetails=p.id;old.after(v)}}else if(!view){const b=tr.querySelector('[data-payperson]');if(b){const v=document.createElement('button');v.type='button';v.textContent='Ver historial';v.dataset.paymentDetails=b.dataset.payperson;b.after(v)}}});};
@@ -1108,6 +1118,52 @@ document.querySelector('[data-tab="cuotas-control"]').addEventListener('click',r
      alert('Importación terminada: '+pending.length+' fichas añadidas. Comprueba el listado de Socios de Honor.');
    }catch(e){alert('No se pudo importar el CSV: '+(e?.message||e))}
  };
+})();
+</script>
+<script id="cayonPlayersVisibilityFix2026">
+(function(){
+ const nav=document.getElementById('nav');
+ if(!nav)return;
+ nav.addEventListener('click',function(e){
+  const button=e.target.closest('button');
+  if(!button)return;
+  const target=button.dataset.tab||button.getAttribute('data-target')||'';
+  if(target==='players'||target==='tab-players'||button.textContent.trim().includes('Jugadores')){
+   const status=document.getElementById('jStatus');if(status)status.value='';
+   const team=document.getElementById('jTeam');if(team)team.value='';
+   const season=document.getElementById('jSeason');if(season)season.value='';
+   const search=document.getElementById('jSearch');if(search)search.value='';
+   if(typeof renderPeople==='function')try{renderPeople();}catch(err){console.error('Error al mostrar jugadores',err);}
+  }
+ });
+})();
+</script>
+<script id="cayonPlayerRowsAlwaysRender2026">
+/* La versión V11 sustituyó renderPeople y dejó de dibujar playerRows. */
+(function(){
+ const previous=renderPeople;
+ function paintPlayers(){
+  const body=document.getElementById('playerRows');if(!body)return;
+  const q=(document.getElementById('jSearch')?.value||'').trim().toLocaleLowerCase('es');
+  const season=(document.getElementById('jSeason')?.value||'').trim().toLocaleLowerCase('es');
+  const team=document.getElementById('jTeam')?.value||'';
+  const status=document.getElementById('jStatus')?.value||'';
+  const players=S.people.filter(p=>p.kind==='Jugador'&&
+   String(p.name||'').toLocaleLowerCase('es').includes(q)&&
+   (!season||String(p.season||'').toLocaleLowerCase('es').includes(season))&&
+   (!team||p.team===team)&&
+   (!status||(Number(p.fee||0)-paidFor('person',p.id)<=0.005?'paid':'pending')===status));
+  body.innerHTML=players.map(p=>{
+   const paid=paidFor('person',p.id),due=Math.max(0,Number(p.fee||0)-paid);
+   return `<tr data-record-id="${esc(p.id)}"><td>${esc(p.name)}</td><td>${esc(p.team||'')}</td><td>${esc(p.season||'')}</td><td>${euro(p.fee)}</td><td>${euro(paid)}</td><td>${euro(due)}</td><td>${due>0.005?`<button class="primary" data-payperson="${esc(p.id)}">Cobrar</button>`:'Pagada'}</td></tr>`;
+  }).join('')||'<tr><td colspan="7">Sin jugadores con estos filtros.</td></tr>';
+ }
+ renderPeople=function(){previous();paintPlayers()};
+ ['jSearch','jSeason','jTeam','jStatus'].forEach(id=>{
+  const field=document.getElementById(id);
+  if(field){field.addEventListener('input',paintPlayers);field.addEventListener('change',paintPlayers)}
+ });
+ paintPlayers();
 })();
 </script>
 </body></html>
