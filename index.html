@@ -298,7 +298,8 @@ const tickets=types.reduce((sum,[type,price])=>sum+counts[type]*price,0);const b
 const ticketCard=Math.round(Math.min(card,tickets)*100)/100,raffleCard=Math.round((card-ticketCard)*100)/100;
 const postings=[{amount:tickets-ticketCard,account:$('gAccount').value,method:'Efectivo',category:'Por competiciones (taquillaje)',description:'Entradas — '+g.name},{amount:ticketCard,account:$('gCardAccount').value,method:'Tarjeta',category:'Por competiciones (taquillaje)',description:'Entradas — '+g.name},{amount:raffle-raffleCard,account:$('gAccount').value,method:'Efectivo',category:'Loterías y rifas',description:'Rifa — '+g.name},{amount:raffleCard,account:$('gCardAccount').value,method:'Tarjeta',category:'Loterías y rifas',description:'Rifa — '+g.name}];
 S.matches.push(g);for(const m of postings)if(m.amount>.005)addMove({type:'income',date:g.date,amount:Math.round(m.amount*100)/100,account:m.account,category:m.category,description:m.description,section:g.section,method:m.method,reference:'Cierre '+g.id,linkedId:'match:'+g.id});if(expenses>0)addMove({type:'expense',date:g.date,amount:expenses,account:$('gAccount').value,category:'Otros gastos de gestión corriente',description:'Gastos taquilla — '+g.name,section:g.section,reference:'Cierre '+g.id,linkedId:'match:'+g.id});save();render();e.target.reset();$('raffleBookRows').innerHTML='';$('gDate').value=today();refreshMatchSummary();alert('Cierre guardado. Entradas y rifa contabilizadas por separado.');};
-$('matchRows').addEventListener('click',e=>{const b=e.target.closest('[data-print-match]');if(!b)return;const g=S.matches.find(x=>x.id===b.dataset.printMatch);if(!g)return;const books=(g.raffleBooks||[]).map(x=>`<tr><td>${esc((x.color?x.color+' · ':'')+(x.number||'Sin número'))}</td><td>${x.sold}</td><td>${euro(x.price)}</td><td>${euro(x.sold*x.price)}</td></tr>`).join('');const w=window.open('','_blank');if(!w)return alert('Permite ventanas emergentes para imprimir.');w.document.write(`<html><head><meta charset="utf-8"><title>Cierre ${esc(g.name)}</title><style>body{font-family:Arial,sans-serif;margin:40px}h1{border-bottom:4px solid #222}table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #ccc;text-align:left}</style></head><body><h1>CD CAYÓN · CIERRE DE RECAUDACIÓN</h1><p><b>${esc(g.name)}</b> · ${esc(g.date)} · ${esc(g.section)}</p><table><tr><th>Concepto</th><th>Importe</th></tr><tr><td>Entradas (${g.sold||0})</td><td>${euro(g.ticketAmount??g.cash+g.card)}</td></tr><tr><td>Rifa</td><td>${euro(g.raffleAmount||0)}</td></tr><tr><th>Total recaudado</th><th>${euro(g.cash+g.card)}</th></tr><tr><td>Efectivo</td><td>${euro(g.cash)}</td></tr><tr><td>Tarjeta</td><td>${euro(g.card)}</td></tr><tr><td>Gastos</td><td>${euro(g.expenses)}</td></tr></table><h2>Talonarios de rifa</h2><table><tr><th>Talonario</th><th>Vendidas</th><th>Precio</th><th>Importe</th></tr>${books}</table><p>${esc(g.notes||'')}</p><p>Firma responsable: ____________________</p></body></html>`);w.document.close();w.focus();w.print();});
+$('matchRows').addEventListener('click',e=>{const b=e.target.closest('[data-print-match]');if(!b)return;const g=S.matches.find(x=>x.id===b.dataset.printMatch);if(!g)return;const books=(g.raffleBooks||[]).map(x=>`<tr><td>${esc((x.color?x.color+' · ':'')+(x.number||'Sin número'))}</td><td>${x.sold}</td><td>${euro(x.price)}</td><td>${euro(x.sold*x.price)}</td></tr>`).join('');const w=window.open('','_blank');if(!w)return alert('Permite ventanas emergentes para imprimir.');w.document.write(`<html><head><meta charset="utf-8"><title>Cierre ${esc(g.name)}</title><style>body{font-family:Arial,sans-serif;margin:40px}h1{border-bottom:4px solid #222}table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #ccc;text-align:left}</style></head><body><h1>CD CAYÓN · CIERRE DE RECAUDACIÓN</h1><p><b>${esc(g.name)}</b> · ${esc(g.date)} · ${esc(g.section)}</p><table><tr><th>Concepto</th><th>Importe</th></tr><tr><td>Entradas (${g.sold||0})</td><td>${euro(g.ticketAmount??g.cash+g.card)}</td></tr><tr><td>Rifa</td><td>${euro(g.raffleAmount||0)}</td></tr><tr><th>Total recaudado</th><th>${euro(g.cash+g.card)}</th></tr><tr><td>Efectivo</td><td>${euro(g.cash)}</td></tr><tr><td>Tarjeta</td><td>${euro(g.card)}</td></tr><tr><td>Gastos</td><td>${euro(g.expenses)}</td></tr></table><h2>Talonarios de rifa</h2><table><tr><th>Talonario</th><th>Vendidas</th><th>Precio</th><th>Importe</th></tr>${books}</table><p>${esc(g.notes||'')}</p><p>Firma responsable: ____________________</p>
+</body></html>`);w.document.close();w.focus();w.print();});
 
 
 // Separación visual de socios y jugadores sin alterar los identificadores de cobros históricos.
@@ -974,6 +975,139 @@ document.querySelector('[data-tab="cuotas-control"]').addEventListener('click',r
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{attach('playerRows');attach('peopleRows');});
   else{attach('playerRows');attach('peopleRows');}
+})();
+</script>
+
+<script id="cayonImportEmpresaCSV2026">
+/* Importación explícita de socios empresa desde CSV; sin crear ingresos contables. */
+(()=>{
+ const button=document.querySelector('[data-import="empresa"]');
+ if(!button)return;
+ button.textContent='Importar Socios Empresa desde CSV';
+ const input=document.createElement('input');
+ input.type='file';input.accept='.csv,text/csv';input.style.display='none';
+ button.insertAdjacentElement('afterend',input);
+ button.onclick=()=>{input.value='';input.click()};
+ function parseCSV(text){
+   text=text.replace(/^\uFEFF/,'');
+   const first=text.split(/\r?\n/,1)[0]||'';
+   const delimiter=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':',';
+   const rows=[];let row=[],field='',quoted=false;
+   for(let i=0;i<text.length;i++){
+     const ch=text[i];
+     if(ch==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else quoted=!quoted}
+     else if(ch===delimiter&&!quoted){row.push(field);field=''}
+     else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(x=>x.trim()))rows.push(row);row=[];field=''}
+     else field+=ch;
+   }
+   if(quoted)throw Error('Hay comillas sin cerrar en el CSV.');
+   row.push(field);if(row.some(x=>x.trim()))rows.push(row);
+   if(!rows.length)throw Error('El archivo está vacío.');
+   const heads=rows.shift().map(x=>x.trim().replace(/^\uFEFF/,''));
+   for(const key of ['Nº socio','Nombre','Apellidos','Cuota','Estado','Temporada'])if(!heads.includes(key))throw Error('Falta la columna: '+key);
+   return rows.map((r,i)=>({line:i+2,fields:Object.fromEntries(heads.map((h,j)=>[h,(r[j]||'').trim()]))}));
+ }
+ input.onchange=async()=>{
+   if(!input.files?.length)return;
+   try{
+     const text=await input.files[0].text();
+     const parsed=parseCSV(text),pending=[],invalid=[],skipped=[];
+     const existing=new Set(S.people.filter(p=>v10Group(p)==='empresa').map(p=>v10Season(p.season)+'|'+Number(p.number)));
+     const incoming=new Set();
+     for(const {line,fields:r} of parsed){
+       const number=Number(r['Nº socio']),season=v10Season(r['Temporada']);
+       const fee=Number(String(r['Cuota']||'').replace(',','.'));
+       const name=[r['Nombre'],r['Apellidos']].filter(Boolean).join(' ').trim();
+       const status=v10Norm(r['Estado']);
+       if(!Number.isInteger(number)||number<1||!name||!/^\d{4}\/\d{4}$/.test(season)||!Number.isFinite(fee)||fee<0||!['pagado','impagado','pendiente'].includes(status)){
+         invalid.push(line);continue;
+       }
+       const key=season+'|'+number;
+       if(existing.has(key)||incoming.has(key)){skipped.push(number);continue}
+       incoming.add(key);
+       pending.push({id:safeUUID(),kind:'Socio',team:'Empresa',number,name,season,fee,
+         importedPaid:status==='pagado'?fee:0,contact:[r['Teléfono'],r['Correo electrónico']].filter(Boolean).join(' · '),
+         dni:r['DNI']||'',method:r['Forma de pago']||'',payDate:r['Fecha de pago']||'',
+         address:r['Domicilio']||'',locality:r['Localidad']||'',joined:r['Fecha alta']||'',
+         email:r['Correo electrónico']||'',phone:r['Teléfono']||'',source:'CSV Socios Empresa importado por el club'});
+     }
+     if(invalid.length){alert('No se ha importado nada. Revisa las filas '+invalid.join(', ')+' porque tienen datos no válidos.');return}
+     if(!pending.length){alert('No hay fichas nuevas. '+skipped.length+' registros ya existen por número y temporada.');return}
+     const paid=pending.filter(p=>p.importedPaid>0).length;
+     const msg='Se van a importar '+pending.length+' fichas de Socios Empresa ('+paid+' pagadas, '+(pending.length-paid)+' pendientes).'+
+       (skipped.length?'\nSe omitirán '+skipped.length+' fichas existentes por número y temporada.':'')+
+       '\nLos pagos del CSV se registrarán como estado histórico, sin crear movimientos bancarios ni duplicar ingresos.\n\n¿Confirmas la importación?';
+     if(!confirm(msg))return;
+     S.people.push(...pending);save();render();
+     alert('Importación terminada: '+pending.length+' fichas añadidas. Comprueba el listado de Socios Empresa.');
+   }catch(e){alert('No se pudo importar el CSV: '+(e?.message||e))}
+ };
+})();
+</script>
+<script id="cayonImportHonorCSV2026">
+/* Importación explícita de socios de honor desde CSV; sin crear ingresos contables. */
+(()=>{
+ const button=document.querySelector('[data-import="empresa"]');
+ if(!button)return;
+ button.textContent='Importar Socios de Honor desde CSV';
+ const input=document.createElement('input');
+ input.type='file';input.accept='.csv,text/csv';input.style.display='none';
+ button.insertAdjacentElement('afterend',input);
+ button.onclick=()=>{input.value='';input.click()};
+ function parseCSV(text){
+   text=text.replace(/^\uFEFF/,'');
+   const first=text.split(/\r?\n/,1)[0]||'';
+   const delimiter=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':',';
+   const rows=[];let row=[],field='',quoted=false;
+   for(let i=0;i<text.length;i++){
+     const ch=text[i];
+     if(ch==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else quoted=!quoted}
+     else if(ch===delimiter&&!quoted){row.push(field);field=''}
+     else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(x=>x.trim()))rows.push(row);row=[];field=''}
+     else field+=ch;
+   }
+   if(quoted)throw Error('Hay comillas sin cerrar en el CSV.');
+   row.push(field);if(row.some(x=>x.trim()))rows.push(row);
+   if(!rows.length)throw Error('El archivo está vacío.');
+   const heads=rows.shift().map(x=>x.trim().replace(/^\uFEFF/,''));
+   for(const key of ['Nº socio','Nombre','Apellidos','Cuota','Estado','Temporada'])if(!heads.includes(key))throw Error('Falta la columna: '+key);
+   return rows.map((r,i)=>({line:i+2,fields:Object.fromEntries(heads.map((h,j)=>[h,(r[j]||'').trim()]))}));
+ }
+ input.onchange=async()=>{
+   if(!input.files?.length)return;
+   try{
+     const text=await input.files[0].text();
+     const parsed=parseCSV(text),pending=[],invalid=[],skipped=[];
+     const existing=new Set(S.people.filter(p=>v10Group(p)==='honor').map(p=>v10Season(p.season)+'|'+Number(p.number)));
+     const incoming=new Set();
+     for(const {line,fields:r} of parsed){
+       const number=Number(r['Nº socio']),season=v10Season(r['Temporada']);
+       const fee=Number(String(r['Cuota']||'').replace(',','.'));
+       const name=[r['Nombre'],r['Apellidos']].filter(Boolean).join(' ').trim();
+       const status=v10Norm(r['Estado']);
+       if(!Number.isInteger(number)||number<1||!name||!/^\d{4}\/\d{4}$/.test(season)||!Number.isFinite(fee)||fee<0||!['pagado','impagado','pendiente'].includes(status)){
+         invalid.push(line);continue;
+       }
+       const key=season+'|'+number;
+       if(existing.has(key)||incoming.has(key)){skipped.push(number);continue}
+       incoming.add(key);
+       pending.push({id:safeUUID(),kind:'Socio',team:'Socio de honor',number,name,season,fee,
+         importedPaid:status==='pagado'?fee:0,contact:[r['Teléfono'],r['Correo electrónico']].filter(Boolean).join(' · '),
+         dni:r['DNI']||'',method:r['Forma de pago']||'',payDate:r['Fecha de pago']||'',
+         address:r['Domicilio']||'',locality:r['Localidad']||'',joined:r['Fecha alta']||'',
+         email:r['Correo electrónico']||'',phone:r['Teléfono']||'',source:'CSV Socios de Honor importado por el club'});
+     }
+     if(invalid.length){alert('No se ha importado nada. Revisa las filas '+invalid.join(', ')+' porque tienen datos no válidos.');return}
+     if(!pending.length){alert('No hay fichas nuevas. '+skipped.length+' registros ya existen por número y temporada.');return}
+     const paid=pending.filter(p=>p.importedPaid>0).length;
+     const msg='Se van a importar '+pending.length+' fichas de Socios de Honor ('+paid+' pagadas, '+(pending.length-paid)+' pendientes).'+
+       (skipped.length?'\nSe omitirán '+skipped.length+' fichas existentes por número y temporada.':'')+
+       '\nLos pagos del CSV se registrarán como estado histórico, sin crear movimientos bancarios ni duplicar ingresos.\n\n¿Confirmas la importación?';
+     if(!confirm(msg))return;
+     S.people.push(...pending);save();render();
+     alert('Importación terminada: '+pending.length+' fichas añadidas. Comprueba el listado de Socios de Honor.');
+   }catch(e){alert('No se pudo importar el CSV: '+(e?.message||e))}
+ };
 })();
 </script>
 </body></html>
