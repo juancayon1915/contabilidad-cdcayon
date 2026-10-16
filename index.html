@@ -1293,4 +1293,74 @@ function init(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
 </script>
+<script id="cayonV33DeleteAndStability">
+/* Reparación localizada: eliminar movimientos y aislar fallos de actualización. */
+(function(){
+ 'use strict';
+ const table=document.getElementById('moveRows');
+ if(!table)return;
+ function notice(message){
+  let el=document.getElementById('cayonErrorNotice');
+  if(!el){el=document.createElement('div');el.id='cayonErrorNotice';el.setAttribute('role','alert');el.style.cssText='position:sticky;top:0;z-index:9999;background:#fff0da;color:#703b18;border:2px solid #d78a44;padding:12px;margin:10px;border-radius:8px';document.querySelector('main')?.prepend(el);}
+  el.textContent=message;
+ }
+ // Evitar que un fallo de una pestaña bloquee el resto de tablas.
+ const originalRender=render;
+ render=function(){
+  try { originalRender(); }
+  catch(err){
+   console.error('Fallo de visualización CD Cayón:',err);
+   notice('Ha fallado la actualización de una tabla. NO repitas el asiento: comprueba antes si aparece en Movimientos. Detalle técnico: '+(err?.message||err));
+   const steps=[renderMoves,renderPeople,renderSponsors,renderMatches,renderAccounts,renderReconciliations,renderReport];
+   steps.forEach(fn=>{try{fn()}catch(e){console.error('Error aislado en '+fn.name,e)}});
+  }
+ };
+ // El botón Eliminar existía en HTML pero carecía de controlador de eventos.
+ table.addEventListener('click',function(e){
+  const btn=e.target.closest('button[data-delmove]');if(!btn)return;
+  e.preventDefault();e.stopPropagation();
+  const index=S.moves.findIndex(m=>String(m.id)===btn.dataset.delmove);
+  if(index<0){alert('No se encuentra este movimiento. Actualiza el listado.');return;}
+  const m=S.moves[index];
+  const parts=(m.allocations||[]).length;
+  const linked=parts||m.linkedId;
+  const info='Fecha: '+m.date+'\nDescripción: '+m.description+'\nImporte: '+euro(m.amount)+'\nCuenta: '+accName(m.account)+(parts?'\nATENCIÓN: este movimiento agrupa '+parts+' cobros de personas. Se anularán TODOS los cobros del grupo.':'')+(linked?'\nATENCIÓN: tiene pagos o registros vinculados.':'');
+  if(!confirm('¿Eliminar este movimiento?\n\n'+info+'\n\nSe guardará una copia recuperable en la papelera local.'))return;
+  const previous=JSON.stringify(S.moves);
+  const trashId=safeUUID();
+  try{
+   // Eliminar exclusivamente el ID elegido, nunca por fecha ni descripción.
+   S.moves.splice(index,1);
+   save();
+   try{
+    const trash=localArray(TRASH_KEY);
+    trash.push({trashId,deletedAt:new Date().toISOString(),record:m});
+    localStorage.setItem(TRASH_KEY,JSON.stringify(trash.slice(-150)));
+   }catch(backupError){console.warn('No cabe la papelera local',backupError);notice('Movimiento enviado a guardar, pero no ha cabido una copia en la papelera local. Exporta una copia JSON.');}
+   logAction('Eliminación de movimiento',m.date+' · '+m.description+' · '+m.amount+' · '+m.id);
+   try{render();safeRender()}catch(err){console.error(err);notice('Movimiento eliminado, pero ha fallado la vista. Comprueba el estado de sincronización antes de continuar.');}
+  }catch(err){
+   S.moves=JSON.parse(previous);
+   console.error('No se pudo eliminar',err);
+   alert('No se ha podido guardar la eliminación. No se han eliminado datos de esta sesión: '+err.message);
+  }
+ },true);
+ // La papelera existente mostraba Recuperar, pero no tenía acción.
+ document.getElementById('trashRows')?.addEventListener('click',function(e){
+  const b=e.target.closest('[data-restore]');if(!b)return;
+  const trash=localArray(TRASH_KEY),i=trash.findIndex(x=>x.trashId===b.dataset.restore);
+  if(i<0)return alert('No se encuentra la copia local.');
+  const item=trash[i];
+  if(S.moves.some(m=>String(m.id)===String(item.record.id)))return alert('Este movimiento ya existe. No se duplicará.');
+  if(!confirm('¿Recuperar el movimiento '+item.record.date+' · '+item.record.description+' · '+euro(item.record.amount)+'?'))return;
+  S.moves.push(item.record);
+  try{save()}catch(err){S.moves.pop();return alert('No se pudo guardar la recuperación: '+err.message)}
+  trash.splice(i,1);try{localStorage.setItem(TRASH_KEY,JSON.stringify(trash))}catch(err){console.warn(err)}
+  logAction('Recuperación de movimiento',item.record.id);
+  render();safeRender();
+ });
+ window.addEventListener('error',function(e){console.error('Error de aplicación:',e.error||e.message);notice('Se ha producido un error de pantalla. Comprueba si el último asiento figura en Movimientos antes de repetirlo.');});
+ window.addEventListener('unhandledrejection',function(e){console.error('Error asíncrono:',e.reason);notice('Error de conexión o actualización. Comprueba el estado de guardado en Supabase antes de repetir operaciones.');});
+})();
+</script>
 </body></html>
