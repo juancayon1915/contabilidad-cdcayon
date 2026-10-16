@@ -1249,4 +1249,48 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  });
 })();
 </script>
+
+<style id="cayonFiltrosBotones2026">
+.filters .cayon-filter-actions{display:flex;align-items:end;gap:8px;flex:0 0 100%;margin-top:2px}
+.filters .cayon-filter-actions button{min-width:105px}
+.filters .cayon-filter-actions .cayon-filter-apply{background:#11846A!important;color:white!important;border-color:#11846A!important}
+</style>
+<script id="cayonFiltrosBotones2026">
+(function(){
+'use strict';
+function init(){
+ const panels=document.querySelectorAll('.filters');
+ panels.forEach(function(panel){
+  if(panel.querySelector('.cayon-filter-actions'))return;
+  const tab=panel.closest('[id^="tab-"]');
+  const ids=Array.from(panel.querySelectorAll('input,select')).filter(x=>x.id);
+  if(!ids.length)return;
+  const actions=document.createElement('div');actions.className='cayon-filter-actions';
+  const apply=document.createElement('button');apply.type='button';apply.className='cayon-filter-apply';apply.textContent='Filtrar';
+  const clear=document.createElement('button');clear.type='button';clear.textContent='Limpiar filtros';
+  function execute(){
+   ids.forEach(function(el){el.dispatchEvent(new Event('input',{bubbles:false}));el.dispatchEvent(new Event('change',{bubbles:false}));});
+   const name=tab&&tab.id;
+   try {
+    if(name==='tab-accounting'&&typeof renderMoves==='function')renderMoves();
+    if(name==='tab-people'&&typeof renderPeople==='function')renderPeople();
+    if(name==='tab-players'&&typeof renderPlayers==='function')renderPlayers();
+    if(name==='tab-sponsors'&&typeof renderSponsors==='function')renderSponsors();
+    if(name==='tab-reports'&&typeof renderReport==='function')renderReport();
+    if(name==='tab-cuotas-control'&&typeof renderCuotasControl==='function')renderCuotasControl();
+    if(panel.closest('#analyticDashboard')&&typeof renderAnalyticDashboard==='function')renderAnalyticDashboard();
+   }catch(err){console.error('Error al aplicar filtros',err);}
+  }
+  apply.addEventListener('click',execute);
+  clear.addEventListener('click',function(){
+   ids.forEach(function(el){if(el.tagName==='SELECT')el.selectedIndex=0;else el.value='';});
+   execute();
+  });
+  panel.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.matches('input')){e.preventDefault();execute();}});
+  actions.append(apply,clear);panel.append(actions);
+ });
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
 </body></html>
