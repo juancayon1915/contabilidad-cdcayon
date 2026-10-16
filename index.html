@@ -191,17 +191,11 @@ const SAFE_KEY=KEY+':snapshots', AUDIT_KEY=KEY+':audit', TRASH_KEY=KEY+':trash';
 function localArray(key){try{let a=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(a)?a:[]}catch{return []}}
 function logAction(action,details){try{let a=localArray(AUDIT_KEY);a.push({at:new Date().toISOString(),action,details});localStorage.setItem(AUDIT_KEY,JSON.stringify(a.slice(-100)));}catch(e){console.warn('Historial local lleno',e);}}
 function save(){
- // Supabase es el almacenamiento principal. La caché local nunca bloquea un cobro.
- // No crear instantáneas completas repetidas: llenaban localStorage en pocos cobros.
- try { localStorage.setItem(KEY, JSON.stringify(S)); }
- catch(e) {
-  if(e?.name!=='QuotaExceededError'&&e?.code!==22&&e?.code!==1014)throw e;
-  console.warn('Caché local llena; el guardado en Supabase continuará.',e);
-  // Únicamente eliminamos instantáneas automáticas auxiliares, nunca datos ni papelera.
-  try { localStorage.removeItem(SAFE_KEY); localStorage.setItem(KEY, JSON.stringify(S)); }
-  catch(e2) { console.warn('No cabe caché local; los datos se enviarán a Supabase.',e2); }
- }
+ // La contabilidad vive en Supabase, no en localStorage.
+ // No se guarda aquí una copia completa que agote la cuota del navegador.
+ // La función se sustituye al iniciar el conector remoto.
 }
+
 function safeRender(){let t=$('trashRows'),a=$('auditRows');if(!t||!a)return;let trash=localArray(TRASH_KEY);t.innerHTML=trash.length?trash.slice().reverse().map(x=>`<div class="accountrow"><span>${esc(x.record.description)} · ${euro(x.record.amount)}</span><span class="small muted">${esc(x.deletedAt)}</span><button data-restore="${esc(x.trashId)}">Recuperar</button></div>`).join(''):'<p class="muted">No hay movimientos en la papelera.</p>';a.innerHTML=localArray(AUDIT_KEY).slice(-15).reverse().map(x=>`<div class="small" style="padding:5px;border-bottom:1px solid #eee">${esc(x.at)} — ${esc(x.action)}: ${esc(x.details)}</div>`).join('')||'<p class="muted">Sin operaciones registradas.</p>';}
 
 function load(){try{let x=JSON.parse(localStorage.getItem(KEY));if(x&&x.accounts&&x.moves){S={...S,...x};if(!S.accounts.some(a=>a.id==='bank2'))S.accounts.splice(1,0,{id:'bank2',name:'Segundo banco',opening:0})}}catch(e){}}
@@ -472,7 +466,7 @@ if(!selected.length){
  const example=S[collection]?.[0];
  console.warn('Selección sin coincidencias', {type,ids,collection,exampleId:example?.id});
  return alert('La casilla está marcada, pero su identificador no coincide con los datos cargados. No se ha borrado nada. Actualiza los datos e inténtalo de nuevo.');
-}selected.forEach(x=>trash.push({trashId:safeUUID(),deletedAt:new Date().toISOString(),record:x,collection}));localStorage.setItem(TRASH_KEY,JSON.stringify(trash));S[collection]=S[collection].filter((x,i)=>!selectedIds.has(String(key==='__index'?i:x.id).trim()));save();render();analysis();alert('Registros retirados. Se ha conservado una copia en la papelera local. Los cobros vinculados no se han borrado automáticamente.');};
+}selected.forEach(x=>trash.push({trashId:safeUUID(),deletedAt:new Date().toISOString(),record:x,collection}));try{localStorage.setItem(TRASH_KEY,JSON.stringify(trash))}catch(e){console.warn('Papelera local sin espacio; el registro se conservará en copia de seguridad de Supabase hasta guardar',e)}S[collection]=S[collection].filter((x,i)=>!selectedIds.has(String(key==='__index'?i:x.id).trim()));save();render();analysis();alert('Registros retirados. Se ha conservado una copia en la papelera local. Los cobros vinculados no se han borrado automáticamente.');};
  });
 function filterRows(id){const input=document.querySelector(`[data-table="${id}"]`),q=input?.value.toLocaleLowerCase('es')||'';el(id)?.querySelectorAll('tr').forEach(tr=>tr.hidden=!!q&&!tr.innerText.toLocaleLowerCase('es').includes(q));}
 function checkRows(){registers.forEach(([tab,id])=>{const body=el(id);if(!body)return;const collection=id==='moveRows'?S.moves:id==='peopleRows'?S.people.filter(x=>x.kind==='Socio'):id==='playerRows'?S.people.filter(x=>x.kind==='Jugador'):id==='sponsorRows'?S.sponsors:id==='matchRows'?S.matches:id==='reconcileRows'?S.reconciliations:[];body.querySelectorAll('tr').forEach((tr,i)=>{if(tr.querySelector('[data-select]'))return;const td=document.createElement('td');const rec=collection[i];const recordId=(id==='peopleRows'||id==='playerRows')?tr.dataset.recordId:(id==='reconcileRows'?String(i):rec?.id);if(recordId!==undefined&&recordId!==null&&recordId!==''){const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.dataset.select=String(recordId);checkbox.setAttribute('aria-label','Seleccionar registro para eliminar');td.appendChild(checkbox);}tr.prepend(td);});filterRows(id);});}
@@ -650,23 +644,30 @@ let client,ready=false,writing=false,pending=false,lastSynced='',revision=0;
 const localSave=save;
 // Mantiene copias locales, pero nunca muestra la app sin autenticar.
 function snapshot(){return JSON.stringify(S)}
-function setState(raw){const x=typeof raw==='string'?JSON.parse(raw):raw;if(!x||!Array.isArray(x.accounts)||!Array.isArray(x.moves)||!Array.isArray(x.people))throw Error('Datos remotos incompletos');S={...S,...x};try{localSave()}catch(e){console.warn('No cabe caché local de datos remotos; se usarán los datos de Supabase',e)}render();if(typeof analysis==='function')analysis();if(typeof safeRender==='function')safeRender();}
+function setState(raw){const x=typeof raw==='string'?JSON.parse(raw):raw;if(!x||!Array.isArray(x.accounts)||!Array.isArray(x.moves)||!Array.isArray(x.people))throw Error('Datos remotos incompletos');S={...S,...x};render();if(typeof analysis==='function')analysis();if(typeof safeRender==='function')safeRender();}
 async function flush(){
  if(!ready||writing||!pending)return;
  writing=true;pending=false;const value=snapshot(),at=revision;
  say('Guardando en Supabase…');
  try{
+  // Detectar si otro ordenador cambió el estado desde nuestra última lectura.
+  const {data:remote,error:readError}=await client.from('estado_tesoreria').select('datos').eq('id','principal').single();
+  if(readError)throw readError;
+  if(lastSynced && JSON.stringify(remote.datos)!==lastSynced){
+   pending=false;
+   say('⚠ CONFLICTO: otro ordenador ha guardado cambios. NO se ha sobrescrito. Exporta una copia JSON y vuelve a entrar.');
+   return;
+  }
   const {error}=await client.from('estado_tesoreria').upsert({id:'principal',datos:JSON.parse(value),actualizado_en:new Date().toISOString()},{onConflict:'id'});
   if(error)throw error;
   lastSynced=value;
   say('✓ Guardado en Supabase · '+new Date().toLocaleTimeString('es-ES'));
  }catch(e){pending=true;say('⚠ No se ha guardado en internet: '+e.message+' · Conserva una copia JSON');}
- finally{writing=false;if(pending&&navigator.onLine)setTimeout(flush,1000)}
+ finally{writing=false}
 }
 save=function(){
  if(!ready){throw Error('No hay sesión de escritura en Supabase. No se ha confirmado el cobro.')}
- // Intentar caché local, pero jamás impedir el envío remoto por falta de espacio.
- try{localSave()}catch(e){console.warn('Error de caché local',e)}
+ // Los datos contables NO se escriben en localStorage.
  revision++;pending=true;flush();
 };
 async function start(){
@@ -696,7 +697,7 @@ async function start(){
     lastSynced=snapshot();
    }
    ready=profile.rol!=='consulta';gate.style.display='none';bar.style.display='flex';
-   say(ready?'✓ Conectado a Supabase':'Acceso de consulta · No se pueden guardar cambios');
+   say(ready?'✓ Conectado a Supabase · los datos no se guardan en este ordenador':'Acceso de consulta · No se pueden guardar cambios');
    document.getElementById('cayonPassword').value='';
   }catch(err){msg.textContent='No se ha podido entrar: '+err.message;try{await client.auth.signOut()}catch(_){}}
  });
