@@ -377,7 +377,7 @@ function renderSplitPeople(){
  $('peopleRows').querySelectorAll('tr').forEach(tr=>{const id=tr.querySelector('[data-payperson]')?.dataset.payperson;});
  const people=S.people.filter(p=>p.kind==='Socio'&&(!season||p.season.includes(season))&&(!cat||p.team===cat));
  const q=$('pSearch').value.toLowerCase(),status=$('pStatus').value;
- const active=people.filter(p=>p.name.toLowerCase().includes(q)&&(!$('pSeasonFilter').value||p.season.toLowerCase().includes($('pSeasonFilter').value.toLowerCase()))&&(!$('pCategoryFilter').value||p.team===$('pCategoryFilter').value)&&(!status||(p.fee-paidFor('person',p.id)<=.005?'paid':'pending')));
+ const active=people.filter(p=>(!q||(/^\d+$/.test(q.trim())?String(p.number??'').trim()===q.trim():[p.name,p.team,p.contact].join(' ').toLowerCase().includes(q)))&&(!$('pSeasonFilter').value||p.season.toLowerCase().includes($('pSeasonFilter').value.toLowerCase()))&&(!$('pCategoryFilter').value||p.team===$('pCategoryFilter').value)&&(!status||(p.fee-paidFor('person',p.id)<=.005?'paid':'pending')));
  // La numeración es permanente: nunca depende del pago de la temporada.
  // El estado de cobro se controla por separado y no altera el número del socio.
  $('peopleRows').innerHTML=active.map(p=>{const collected=paidFor('person',p.id),due=Math.max(0,p.fee-collected);const n=p.number!=null&&p.number!==''?p.number:'Sin número';return `<tr><td>${n}</td><td><strong>${esc(p.name)}</strong></td><td>${esc(p.team)}</td><td>${esc(p.season)}</td><td>${euro(p.fee)}</td><td>${euro(collected)}</td><td>${euro(due)}</td><td>${due>.005?`<button class="primary" data-payperson="${p.id}">Cobrar</button>`:'Pagada'}</td></tr>`}).join('')||'<tr><td colspan="8">No hay socios con estos filtros.</td></tr>';
