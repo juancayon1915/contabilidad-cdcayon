@@ -160,6 +160,7 @@ body nav#nav details.cayon-menu-group button.active {color:#FFFFFF!important;bac
 <button data-tab="accounting" data-cayon-kind="all" type="button">📒 Movimientos</button>
 <button data-cayon-kind="income" data-tab="accounting">💰 Ingresos</button>
 <button data-cayon-kind="expense" data-tab="accounting">💸 Gastos</button>
+<button data-cayon-kind="transfer" data-tab="accounting">🔁 Traspasos</button>
 <details class="cayon-menu-group" open=""><summary>👤 Socios</summary>
 <button data-tab="people">👤 Socios generales</button>
 <button data-tab="honor">🏅 Socios de honor</button>
@@ -221,7 +222,7 @@ body nav#nav details.cayon-menu-group button.active {color:#FFFFFF!important;bac
 <section class="hidden" id="tab-reports"><div class="panel"><h2>Informe de ingresos y gastos</h2><div class="filters"><label>Desde<input id="repFrom" type="date"/></label><label>Hasta<input id="repTo" type="date"/></label></div><div class="cards" id="reportCards"></div><div class="tablewrap"><table><thead><tr><th>Concepto</th><th>Tipo</th><th>Sección</th><th>Total</th></tr></thead><tbody id="reportRows"></tbody></table></div><div class="actions"><button class="primary" id="reportCsv">Exportar informe CSV</button></div></div></section>
 <section class="hidden" id="tab-budget"><div class="panel"><h2>Presupuesto general del club · ingresos y gastos</h2><p class="muted">Presupuesto único por temporada. Los totales se calculan automáticamente.</p><div class="cards" id="budgetTotals"></div><div class="fields"><label>Temporada<input id="budgetSeason" value="2026/2027"/></label><label class="hidden">Sección<select id="budgetSection"><option selected="">Club general</option></select></label><label>Tipo<select id="budgetType"><option value="income">Ingresos</option><option value="expense">Gastos</option></select></label><label>Concepto<select id="budgetCategory"></select></label><label>Presupuesto (€)<input id="budgetAmount" min="0" step=".01" type="number" value="0"/></label></div><div class="actions"><button class="primary" id="budgetSave">Guardar partida</button><button id="budgetExport">Exportar comparativa CSV</button></div><p class="muted small">La temporada se considera del 1 de julio al 30 de junio. Los importes reales corresponden a movimientos registrados, no a facturas pendientes.</p><div class="tablewrap"><table><thead><tr><th>Temporada</th><th>Sección</th><th>Tipo</th><th>Concepto</th><th>Previsto</th><th>Real</th><th>Diferencia real − previsto</th><th></th></tr></thead><tbody id="budgetRows"></tbody></table></div></div></section>
 <section class="hidden" id="tab-seasons"><div class="panel"><h2>Cierre y archivo de temporadas</h2><p>El cierre marca una temporada como archivada, sin borrar sus datos. Se puede reabrir si hay que hacer una corrección. Antes de cerrar, descarga una copia completa JSON.</p><div class="fields"><label>Temporada<input id="closeSeason" placeholder="2026/2027" value="2026/2027"/></label></div><div class="actions"><button class="primary" id="closeSeasonBtn">Cerrar temporada</button><button id="openSeasonBtn">Reabrir temporada</button><button id="seasonBackup">Descargar copia antes del cierre</button></div><div id="seasonRows"></div><p class="muted small">El cierre es administrativo: no bloquea automáticamente la introducción de movimientos atrasados.</p></div></section>
-<section class="hidden" id="tab-backup"><div class="panel"><h2>Exportación y copias de seguridad</h2><p class="notice">Guarda una copia de seguridad antes de restaurar datos.</p><div class="actions"><button class="primary" id="exportCsv">Exportar movimientos CSV</button><button id="backupJson">Descargar copia completa JSON</button><label class="button" for="restoreFile">Restaurar copia JSON</label><input accept=".json,application/json" class="hidden" id="restoreFile" type="file"/></div><p class="muted small">La copia incluye cuentas, movimientos, fichas, patrocinadores, taquillas y conciliaciones. Los datos personales deben protegerse y solo compartirse con personas autorizadas.</p><div class="panel" style="margin-top:15px"><h2>Protección y recuperación local</h2><p class="muted small">La papelera y el historial se guardan solo en este navegador. Las copias automáticas locales NO sustituyen una copia externa: si borras los datos del navegador o se estropea el equipo, pueden perderse.</p><div class="actions"><button id="downloadSafety">Descargar copia de seguridad fechada</button><span class="muted small">Copia automática semanal al entrar. Las copias se guardan en la carpeta de descargas configurada en tu navegador; puedes elegir otra carpeta desde sus ajustes.</span><button id="restoreSnapshot">Recuperar versión local anterior</button><button id="exportAudit">Exportar historial CSV</button></div><h3>Papelera de movimientos</h3><div id="trashRows"></div><h3>Últimas operaciones registradas</h3><div id="auditRows"></div></div><button class="danger" id="clearAll">Borrar todos los datos</button></div></section>
+<section class="hidden" id="tab-backup"><div class="panel"><h2>Exportación y copias de seguridad</h2><p class="notice">Guarda una copia de seguridad antes de restaurar datos.</p><div class="actions"><button class="primary" id="exportCsv">Exportar movimientos CSV</button><button id="backupJson">Descargar copia completa JSON</button><label class="button" for="restoreFile">Restaurar copia JSON</label><input accept=".json,application/json" class="hidden" id="restoreFile" type="file"/></div><p class="muted small">La copia incluye cuentas, movimientos, fichas, patrocinadores, taquillas y conciliaciones. Los datos personales deben protegerse y solo compartirse con personas autorizadas.</p><div class="panel" style="margin-top:15px"><h2>Protección y recuperación local</h2><p class="muted small">La papelera y el historial se guardan solo en este navegador. Las copias automáticas locales NO sustituyen una copia externa: si borras los datos del navegador o se estropea el equipo, pueden perderse.</p><div class="actions"><button id="downloadSafety">Descargar copia de seguridad fechada</button><span class="muted small">Descarga solo cuando pulses el botón. Puedes organizar los archivos en una carpeta desde el navegador.</span><button id="restoreSnapshot">Recuperar versión local anterior</button><button id="exportAudit">Exportar historial CSV</button></div><h3>Papelera de movimientos</h3><div id="trashRows"></div><h3>Últimas operaciones registradas</h3><div id="auditRows"></div></div><button class="danger" id="clearAll">Borrar todos los datos</button></div></section>
 <section class="hidden" id="tab-settings">
 <div class="panel" id="cayonCatalogAdmin"><h2>Administración del club · altas y modificaciones</h2><p class="muted">Los cambios de catálogos se guardan junto con la contabilidad en Supabase. No se borran movimientos existentes.</p>
 <div class="grid2">
@@ -364,40 +365,7 @@ const ticketCard=Math.round(Math.min(card,tickets)*100)/100,raffleCard=Math.roun
 const postings=[{amount:tickets-ticketCard,account:$('gAccount').value,method:'Efectivo',category:'Por competiciones (taquillaje)',description:'Entradas — '+g.name},{amount:ticketCard,account:$('gCardAccount').value,method:'Tarjeta',category:'Por competiciones (taquillaje)',description:'Entradas — '+g.name},{amount:raffle-raffleCard,account:$('gAccount').value,method:'Efectivo',category:'Loterías y rifas',description:'Rifa — '+g.name},{amount:raffleCard,account:$('gCardAccount').value,method:'Tarjeta',category:'Loterías y rifas',description:'Rifa — '+g.name}];
 S.matches.push(g);for(const m of postings)if(m.amount>.005)addMove({type:'income',date:g.date,amount:Math.round(m.amount*100)/100,account:m.account,category:m.category,description:m.description,section:g.section,method:m.method,reference:'Cierre '+g.id,linkedId:'match:'+g.id});if(expenses>0)addMove({type:'expense',date:g.date,amount:expenses,account:$('gAccount').value,category:'Otros gastos de gestión corriente',description:'Gastos taquilla — '+g.name,section:g.section,reference:'Cierre '+g.id,linkedId:'match:'+g.id});save();render();e.target.reset();$('raffleBookRows').innerHTML='';$('gDate').value=today();refreshMatchSummary();alert('Cierre guardado. Entradas y rifa contabilizadas por separado.');};
 $('matchRows').addEventListener('click',e=>{const b=e.target.closest('[data-print-match]');if(!b)return;const g=S.matches.find(x=>x.id===b.dataset.printMatch);if(!g)return;const books=(g.raffleBooks||[]).map(x=>`<tr><td>${esc((x.color?x.color+' · ':'')+(x.number||'Sin número'))}</td><td>${x.sold}</td><td>${euro(x.price)}</td><td>${euro(x.sold*x.price)}</td></tr>`).join('');const w=window.open('','_blank');if(!w)return alert('Permite ventanas emergentes para imprimir.');w.document.write(`<html><head><meta charset="utf-8"><title>Cierre ${esc(g.name)}</title><style>body{font-family:Arial,sans-serif;margin:40px}h1{border-bottom:4px solid #222}table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #ccc;text-align:left}</style></head><body><h1>CD CAYÓN · CIERRE DE RECAUDACIÓN</h1><p><b>${esc(g.name)}</b> · ${esc(g.date)} · ${esc(g.section)}</p><table><tr><th>Concepto</th><th>Importe</th></tr><tr><td>Entradas (${g.sold||0})</td><td>${euro(g.ticketAmount??g.cash+g.card)}</td></tr><tr><td>Rifa</td><td>${euro(g.raffleAmount||0)}</td></tr><tr><th>Total recaudado</th><th>${euro(g.cash+g.card)}</th></tr><tr><td>Efectivo</td><td>${euro(g.cash)}</td></tr><tr><td>Tarjeta</td><td>${euro(g.card)}</td></tr><tr><td>Gastos</td><td>${euro(g.expenses)}</td></tr></table><h2>Talonarios de rifa</h2><table><tr><th>Talonario</th><th>Vendidas</th><th>Precio</th><th>Importe</th></tr>${books}</table><p>${esc(g.notes||'')}</p><p>Firma responsable: ____________________</p>
-<script id="cayonArqueoDenominaciones2026">
-(function(){
- 'use strict';
- const denominations=[100,50,20,10,5,2,1,0.50,0.20,0.10,0.05];
- const get=id=>document.getElementById(id);
- function init(){
-  const host=get('arqueoBilletes');if(!host||host.dataset.installed)return;
-  host.dataset.installed='true';
-  host.innerHTML=denominations.map((v,i)=>'<label>'+(v>=5?'Billetes':'Monedas')+' de '+v.toLocaleString('es-ES',{style:'currency',currency:'EUR'})+'<input class="arqueo-cantidad" data-cents="'+Math.round(v*100)+'" type="number" min="0" step="1" value="0" inputmode="numeric" aria-label="Cantidad de '+v+' euros"></label>').join('');
-  function recount(){
-   const cents=Array.from(host.querySelectorAll('.arqueo-cantidad')).reduce((sum,inp)=>sum+(Math.max(0,Math.floor(Number(inp.value)||0))*Number(inp.dataset.cents)),0);
-   let cashAccount=(typeof S!=='undefined'&&S.accounts||[]).find(a=>a.id==='cash')||(typeof S!=='undefined'&&S.accounts||[]).find(a=>/caja|efectivo/i.test(a.name));
-   const ledger=cashAccount&&typeof balances==='function'?Number(balances()[cashAccount.id]||0):0;
-   const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n);
-   get('arqueoContado').textContent=money(cents/100);
-   get('arqueoContable').textContent=money(ledger);
-   const difference=Math.round(cents-ledger*100)/100;
-   get('arqueoDiferencia').textContent=money(difference);
-   get('arqueoDiferencia').style.color=Math.abs(difference)<.005?'#11846A':'#D65F52';
-   return {counted:cents/100,ledger,difference};
-  }
-  host.addEventListener('input',recount);
-  const key='CD_CAYON_ARQUEOS_HISTORIAL_LOCAL_2026';
-  function history(){try{return JSON.parse(localStorage.getItem(key)||'[]')}catch(_){return []}}
-  function showHistory(){const rows=get('arqueoHistorial');if(!rows)return;rows.innerHTML=history().slice().reverse().map(x=>'<tr><td>'+x.date+'</td><td>'+x.counted.toFixed(2)+' €</td><td>'+x.ledger.toFixed(2)+' €</td><td>'+x.difference.toFixed(2)+' €</td></tr>').join('')||'<tr><td colspan="4">Todavía no hay arqueos guardados en este navegador.</td></tr>';}
-  get('guardarArqueo')?.addEventListener('click',()=>{const current=recount();const entry={date:new Date().toLocaleString('es-ES'),...current};try{localStorage.setItem(key,JSON.stringify([...history(),entry].slice(-100)));showHistory();alert('Arqueo guardado en este navegador. No se han modificado los movimientos.')}catch(err){alert('No se ha podido guardar el arqueo: '+err.message)}});
-  get('activarArqueo')?.addEventListener('click',()=>{get('arqueoEstado').textContent='Arqueo disponible. Introduce las cantidades de cada billete y moneda.';recount()});
-  get('arqueoEstado').textContent='Puedes contar el efectivo sin modificar la contabilidad.';
-  showHistory();recount();
-  document.querySelector('[data-tab="arqueo"]')?.addEventListener('click',()=>setTimeout(recount,50));
- }
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
-})();
-</script>
+
 </body></html>`);w.document.close();w.focus();w.print();});
 
 
@@ -736,17 +704,9 @@ async function start(){
    const {data,error:re}=await client.from('estado_tesoreria').select('datos').eq('id','principal').maybeSingle();if(re)throw re;
    if(data){setState(data.datos);lastSynced=JSON.stringify(data.datos);}
    else{throw Error('No existe el registro principal de contabilidad real. Por seguridad esta aplicación NO crea ni importa datos automáticamente. Contacta con el administrador de Supabase.');}
-   // Copia de seguridad previa a cualquier edición en producción.
-   // Se entrega una copia JSON descargable del estado remoto antes de habilitar la escritura.
-   if(profile.rol!=='consulta'){
-    const backupKey='CD_CAYON_ULTIMA_COPIA_SEMANAL_V1';
-    const lastBackup=Number(localStorage.getItem(backupKey)||0);
-    const backupDue=!lastBackup||Date.now()-lastBackup>=7*24*60*60*1000;
-    if(backupDue){downloadSafeCopy();try{localStorage.setItem(backupKey,String(Date.now()))}catch(_){}}
-    const confirmed=confirm(backupDue?'SEGURIDAD CD CAYÓN\n\nSe ha descargado la copia semanal de seguridad. Puedes continuar con la contabilidad real.\n\n¿Habilitar la edición?':'SEGURIDAD CD CAYÓN\n\nLa copia semanal todavía está vigente; no es necesario descargar otra al abrir.\n\n¿Habilitar la edición de la contabilidad real?');
-    if(!confirmed){await client.auth.signOut();msg.textContent='Edición cancelada. No se ha modificado la contabilidad real.';return;}
-   }
-   try{const copy=await backupRead();if(copy?.state&&!equalJSON(copy.state,JSON.parse(lastSynced))){blocked=true;pending=true}else if(copy)await clearPendingBackup()}catch(err){blocked=true;pending=true;msg.textContent='No se puede comprobar la copia de emergencia: '+err.message}
+       // Acceso normal: sin descarga automática ni confirmación obligatoria.
+    // Las copias de seguridad solo se descargan cuando el usuario lo solicita.
+try{const copy=await backupRead();if(copy?.state&&!equalJSON(copy.state,JSON.parse(lastSynced))){blocked=true;pending=true}else if(copy)await clearPendingBackup()}catch(err){blocked=true;pending=true;msg.textContent='No se puede comprobar la copia de emergencia: '+err.message}
    ready=profile.rol!=='consulta';gate.style.display='none';bar.style.display='flex';
    say(blocked?'⛔ COPIA DE EMERGENCIA PENDIENTE. No se permite guardar hasta revisar los datos.':ready?'✓ Conectado a Supabase · sin cambios pendientes':'Acceso de consulta · No se pueden guardar cambios');
    document.getElementById('cayonPassword').value='';
@@ -995,7 +955,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   S.moves=S.moves.filter(m=>!removedIds.has(m.id));
   logAction('Agrupación histórica',total+' cobros en '+batches.length+' asientos; '+removed+' movimientos absorbidos');
   save();render();
-  alert('Agrupación terminada: '+total+' cobros en '+batches.length+' movimientos. Se ha descargado una copia de seguridad. Pulsa «Ver detalle» en cada asiento para ver los pagadores.');
+  alert('Agrupación terminada: '+total+' cobros en '+batches.length+' movimientos. Pulsa «Ver detalle» en cada asiento para ver los pagadores.');
  }
  const panel=document.querySelector('#tab-moves .panel')||document.getElementById('moveRows')?.closest('.panel');
  if(panel){const box=document.createElement('div');box.className='actions';box.innerHTML='<button type="button" id="cayonConsolidateOld">Agrupar cuotas ya registradas por día</button><span class="small muted">Socios y categorías inferiores por separado; mismo día, cuenta, forma y sección. Conserva el detalle.</span>';panel.insertBefore(box,panel.firstChild.nextSibling);box.querySelector('button').onclick=consolidate;}
@@ -1425,9 +1385,17 @@ document.addEventListener('click',function(ev){
     const kind=b.getAttribute('data-cayon-kind');
     setTimeout(function(){
       const tab=document.getElementById('tab-accounting');if(!tab)return;
-      const controls=[...tab.querySelectorAll('select')];
-      const sel=controls.find(el=>[...el.options].some(o=>o.value===kind));
-      if(kind==='all'){const all=document.getElementById('fType');if(all){all.value='';all.dispatchEvent(new Event('change',{bubbles:true}));if(typeof renderMoves==='function')renderMoves();}}else if(sel){sel.value=kind;sel.dispatchEvent(new Event('change',{bubbles:true}));}
+      // El filtro principal lo determina la pestaña elegida, sin afectar a los demás filtros.
+      const tipo=document.getElementById('fType');
+      if(tipo){
+        tipo.value=(kind==='all'?'':kind);
+        tipo.dispatchEvent(new Event('change',{bubbles:true}));
+        if(typeof renderMoves==='function')renderMoves();
+      }
+      // La pestaña contable es compartida, pero el menú muestra la opción exacta elegida.
+      document.querySelectorAll('#nav button[data-tab="accounting"]').forEach(function(btn){
+        btn.classList.toggle('active',btn===b);
+      });
     },40);
   }
 });
@@ -1749,6 +1717,74 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   document.querySelectorAll('#analyticDashboard input,#analyticDashboard select').forEach(el=>{el.addEventListener('input',paint);el.addEventListener('change',paint);});
   paint();
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+
+<script id="cayonArqueoDenominaciones2026">
+(function(){
+ 'use strict';
+ const denominations=[100,50,20,10,5,2,1,0.50,0.20,0.10,0.05];
+ const get=id=>document.getElementById(id);
+ function init(){
+  const host=get('arqueoBilletes');if(!host||host.dataset.installed)return;
+  host.dataset.installed='true';
+  host.innerHTML=denominations.map((v,i)=>'<label>'+(v>=5?'Billetes':'Monedas')+' de '+v.toLocaleString('es-ES',{style:'currency',currency:'EUR'})+'<input class="arqueo-cantidad" data-cents="'+Math.round(v*100)+'" type="number" min="0" step="1" value="0" inputmode="numeric" aria-label="Cantidad de '+v+' euros"></label>').join('');
+  function recount(){
+   const cents=Array.from(host.querySelectorAll('.arqueo-cantidad')).reduce((sum,inp)=>sum+(Math.max(0,Math.floor(Number(inp.value)||0))*Number(inp.dataset.cents)),0);
+   let cashAccount=(typeof S!=='undefined'&&S.accounts||[]).find(a=>a.id==='cash')||(typeof S!=='undefined'&&S.accounts||[]).find(a=>/caja|efectivo/i.test(a.name));
+   const ledger=cashAccount&&typeof balances==='function'?Number(balances()[cashAccount.id]||0):0;
+   const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n);
+   get('arqueoContado').textContent=money(cents/100);
+   get('arqueoContable').textContent=money(ledger);
+   const difference=Math.round(cents-ledger*100)/100;
+   get('arqueoDiferencia').textContent=money(difference);
+   get('arqueoDiferencia').style.color=Math.abs(difference)<.005?'#11846A':'#D65F52';
+   return {counted:cents/100,ledger,difference};
+  }
+  host.addEventListener('input',recount);
+  const key='CD_CAYON_ARQUEOS_HISTORIAL_LOCAL_2026';
+  function history(){try{return JSON.parse(localStorage.getItem(key)||'[]')}catch(_){return []}}
+  function showHistory(){const rows=get('arqueoHistorial');if(!rows)return;rows.innerHTML=history().slice().reverse().map(x=>'<tr><td>'+x.date+'</td><td>'+x.counted.toFixed(2)+' €</td><td>'+x.ledger.toFixed(2)+' €</td><td>'+x.difference.toFixed(2)+' €</td></tr>').join('')||'<tr><td colspan="4">Todavía no hay arqueos guardados en este navegador.</td></tr>';}
+  get('guardarArqueo')?.addEventListener('click',()=>{const current=recount();const entry={date:new Date().toLocaleString('es-ES'),...current};try{localStorage.setItem(key,JSON.stringify([...history(),entry].slice(-100)));showHistory();alert('Arqueo guardado en este navegador. No se han modificado los movimientos.')}catch(err){alert('No se ha podido guardar el arqueo: '+err.message)}});
+  get('activarArqueo')?.addEventListener('click',()=>{get('arqueoEstado').textContent='Arqueo disponible. Introduce las cantidades de cada billete y moneda.';recount()});
+  get('arqueoEstado').textContent='Puedes contar el efectivo sin modificar la contabilidad.';
+  showHistory();recount();
+  document.querySelector('[data-tab="arqueo"]')?.addEventListener('click',()=>setTimeout(recount,50));
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+<script id="cayonConfigurarClubActivo2026">
+(function(){
+ 'use strict';
+ function init(){
+   const btn=document.getElementById('clubNameBtn');
+   if(!btn)return;
+   btn.type='button';
+   btn.addEventListener('click',function(){
+     if(typeof S==='undefined'||typeof save!=='function'){
+       alert('La configuración del club todavía no está disponible.');return;
+     }
+     const actual=String(S.club||'CD Cayón');
+     const respuesta=prompt('Nombre del club:',actual);
+     if(respuesta===null)return;
+     const nuevo=respuesta.trim().replace(/\s+/g,' ');
+     if(!nuevo){alert('El nombre del club no puede estar vacío.');return;}
+     if(nuevo.length>100){alert('El nombre es demasiado largo (máximo 100 caracteres).');return;}
+     if(nuevo===actual)return;
+     S.club=nuevo;
+     try{
+       save();
+       if(typeof render==='function')render();
+       alert('Nombre actualizado. Comprueba el indicador de sincronización con Supabase antes de cerrar la aplicación.');
+     }catch(error){
+       S.club=actual;
+       if(typeof render==='function')render();
+       alert('No se pudo guardar el nombre: '+(error.message||error));
+     }
+   });
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
