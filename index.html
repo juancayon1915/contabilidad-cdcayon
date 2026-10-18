@@ -180,6 +180,7 @@ body nav#nav details.cayon-menu-group button.active {color:#FFFFFF!important;bac
 <button data-tab="sponsors">📢 Publicidad</button>
 <details class="cayon-menu-group"><summary>📊 Presupuestos e informes</summary>
 <button data-tab="budget">📋 Presupuestos</button>
+<button data-tab="familias">📊 Informes por familias</button>
 <button data-tab="reports">📈 Informes</button>
 </details>
 <details class="cayon-menu-group"><summary>⚙️ Ajustes y control</summary>
@@ -221,6 +222,7 @@ body nav#nav details.cayon-menu-group button.active {color:#FFFFFF!important;bac
 <div class="match-card"><h3>4 · Arqueo y contabilización</h3><div class="fields"><label>Efectivo recibido (€)<input id="gCashSplit" min="0" step=".01" type="number" value="0"/></label><label>Tarjeta recibida (€)<input id="gCardSplit" min="0" step=".01" type="number" value="0"/></label><label>Cuenta efectivo<select id="gAccount"></select></label><label>Cuenta tarjeta<select id="gCardAccount"></select></label><label>Gastos asociados (€)<input id="gExpenses" min="0" step=".01" type="number" value="0"/></label><label>Observaciones<input id="gNotes"/></label></div><input id="gTransferSplit" type="hidden" value="0"/><select class="hidden" id="gTransferAccount"></select><div class="actions"><button id="matchFillCash" type="button">Completar efectivo</button><button class="primary" type="submit">Guardar y contabilizar cierre</button></div><p class="muted small">Se crean ingresos separados para entradas y rifa; si hay efectivo y tarjeta se separan también por cuenta. No se permite guardar si el arqueo no cuadra.</p></div>
 </form><div class="panel"><h2>Historial de cierres</h2><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Partido</th><th>Equipo</th><th>Entradas vendidas</th><th>Entradas (€)</th><th>Rifa (€)</th><th>Total (€)</th><th>Gastos (€)</th><th>Detalle</th></tr></thead><tbody id="matchRows"></tbody></table></div></div></section>
 <section class="hidden" id="tab-accounts"><div class="panel"><h2>Cuentas de tesorería</h2><p class="muted">Introduce los saldos de apertura correspondientes a la fecha en que empiezas a usar la aplicación.</p><div id="accountSettings"></div><div class="actions"><button class="primary" id="saveAccounts">Guardar cuentas</button></div></div><div class="panel"><h2>Conciliación bancaria manual</h2><p>Compara el saldo calculado con el saldo del extracto bancario. Marca la fecha de revisión y registra las diferencias como movimientos cuando las hayas comprobado.</p><form id="reconcileForm"><div class="fields"><label>Cuenta<select id="rAccount"></select></label><label>Fecha de conciliación<input id="rDate" required="" type="date"/></label><label>Saldo según banco / caja (€)<input id="rBalance" required="" step=".01" type="number"/></label><label>Observaciones<input id="rNotes" placeholder="Movimientos pendientes, comisiones…"/></label></div><div class="actions"><button class="primary">Guardar conciliación</button></div></form><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Cuenta</th><th>Saldo aplicación</th><th>Saldo extracto</th><th>Diferencia</th><th>Observaciones</th></tr></thead><tbody id="reconcileRows"></tbody></table></div></div></section>
+<section class="hidden" id="tab-familias"><div class="panel" id="cayonResumenFamilias"><h2>Ingresos y gastos por familias</h2><p>Cargando importes...</p></div></section>
 <section class="hidden" id="tab-reports"><div class="panel"><h2>Informe de ingresos y gastos</h2><div class="filters"><label>Desde<input id="repFrom" type="date"/></label><label>Hasta<input id="repTo" type="date"/></label></div><div class="cards" id="reportCards"></div><div class="tablewrap"><table><thead><tr><th>Concepto</th><th>Tipo</th><th>Sección</th><th>Total</th></tr></thead><tbody id="reportRows"></tbody></table></div><div class="actions"><button class="primary" id="reportCsv">Exportar informe CSV</button></div></div></section>
 <section class="hidden" id="tab-budget"><div class="panel"><h2>Presupuesto general del club · ingresos y gastos</h2><p class="muted">Presupuesto único por temporada. Los totales se calculan automáticamente.</p><div class="cards" id="budgetTotals"></div><div class="fields"><label>Temporada<input id="budgetSeason" value="2026/2027"/></label><label class="hidden">Sección<select id="budgetSection"><option selected="">Club general</option></select></label><label>Tipo<select id="budgetType"><option value="income">Ingresos</option><option value="expense">Gastos</option></select></label><label>Concepto<select id="budgetCategory"></select></label><label>Presupuesto (€)<input id="budgetAmount" min="0" step=".01" type="number" value="0"/></label></div><div class="actions"><button class="primary" id="budgetSave">Guardar partida</button><button id="budgetExport">Exportar comparativa CSV</button></div><p class="muted small">La temporada se considera del 1 de julio al 30 de junio. Los importes reales corresponden a movimientos registrados, no a facturas pendientes.</p><div class="tablewrap"><table><thead><tr><th>Temporada</th><th>Sección</th><th>Tipo</th><th>Concepto</th><th>Previsto</th><th>Real</th><th>Diferencia real − previsto</th><th></th></tr></thead><tbody id="budgetRows"></tbody></table></div></div></section>
 <section class="hidden" id="tab-seasons"><div class="panel"><h2>Cierre y archivo de temporadas</h2><p>El cierre marca una temporada como archivada, sin borrar sus datos. Se puede reabrir si hay que hacer una corrección. Antes de cerrar, descarga una copia completa JSON.</p><div class="fields"><label>Temporada<input id="closeSeason" placeholder="2026/2027" value="2026/2027"/></label></div><div class="actions"><button class="primary" id="closeSeasonBtn">Cerrar temporada</button><button id="openSeasonBtn">Reabrir temporada</button><button id="seasonBackup">Descargar copia antes del cierre</button></div><div id="seasonRows"></div><p class="muted small">El cierre es administrativo: no bloquea automáticamente la introducción de movimientos atrasados.</p></div></section>
@@ -1707,11 +1709,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  const palette=['#168c9a','#7a56cd','#f29b38','#e76886','#288ecb','#40a77d','#aa64a5','#df7252','#72974a','#4e73ad','#b7882e'];
  const normalize=v=>String(v||'').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
  function family(m){
-  const cat=normalize(m.category),sub=normalize(m.subcategory),description=normalize(m.description);
+  const cat=normalize(m.category),sub=normalize(m.subcategory),description=normalize(m.description),joint=[cat,sub,description].join(' ');
   if(m.type==='expense')return String(m.category||'Otros gastos');
-  if(/campus/.test(cat)||(/campus/.test(sub)&&!/cuotas agrupadas/.test(sub)))return 'Campus';
-  if(/futbol base|categorias inferiores|jugadores|cuotas deportivas/.test(cat))return 'Categorías inferiores';
-  if(/socios|abonados|carnet/.test(cat))return 'Socios';
+  // Unificar cuotas de fútbol base con independencia del concepto o del asiento agrupado.
+  // Campus solo se distingue cuando es un concepto concreto y no una familia mixta.
+  const fee=/cuota|mensualidad|jugador|futbol base|categorias inferiores|juvenil|cadete|cantera|escuela deportiva|formacion deportiva/.test(joint);
+  if(/campus/.test(cat)&&!/cuota.*(jugador|futbol base|categorias inferiores)/.test(joint))return 'Campus';
+  if(/campus/.test(sub)&&!/cuota.*(jugador|futbol base|categorias inferiores)/.test(joint))return 'Campus';
+  if(/futbol base|categorias inferiores|jugadores|cuotas deportivas|juvenil|cadete|cantera|escuela deportiva/.test(joint)&&fee)return 'Categorías inferiores';
+  if(/futbol base|categorias inferiores/.test(cat)&&!/campus/.test(joint))return 'Categorías inferiores';
+  if(/socios|abonados|carnet|cuotas socios|cuota de socio/.test(joint))return 'Socios';
   if(/patrocin|publicidad|anuncio/.test(cat))return 'Publicidad y patrocinios';
   if(/taquill|entradas/.test(cat))return 'Taquillas';
   if(/rifa|papeleta/.test(cat))return 'Rifas';
@@ -1729,34 +1736,33 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  }
  function paint(){
   const root=document.getElementById('cayonResumenFamilias');if(!root||typeof S==='undefined'||typeof dashFilteredMoves!=='function')return;
-  const moves=dashFilteredMoves().filter(m=>m.type==='income'||m.type==='expense');const by=aggregate(moves);
+  const seasonSel=document.getElementById('cayonFamilySeason');
+  const movesAll=(S.moves||[]).filter(m=>m.type==='income'||m.type==='expense');
+  const seasons=new Set(movesAll.filter(m=>/^\d{4}-\d{2}-\d{2}/.test(m.date||'')).map(m=>{const y=+m.date.slice(0,4),month=+m.date.slice(5,7);const first=month>=7?y:y-1;return first+'/'+(first+1);}));
+  const saved=seasonSel?seasonSel.value:'';
+  const optionHtml='<option value="">Todas las temporadas</option>'+[...seasons].sort().reverse().map(v=>'<option value="'+v+'">'+v+'</option>').join('');
+  const selected=seasons.has(saved)?saved:'';
+  const moves=movesAll.filter(m=>{if(!selected)return true;const y=+String(m.date||'').slice(0,4),month=+String(m.date||'').slice(5,7);return (month>=7?y:y-1)+'/'+(month>=7?y+1:y)===selected;});
+  const by=aggregate(moves);
   const inc=[...by.income.values()].reduce((a,g)=>a+g.amount,0),exp=[...by.expense.values()].reduce((a,g)=>a+g.amount,0);
   const summary='<div class="cayon-kpis"><div><span>Total ingresos</span><b>'+money(inc)+'</b></div><div><span>Total gastos</span><b>'+money(exp)+'</b></div><div><span>Resultado</span><b>'+money(inc-exp)+'</b></div></div>';
   const accounts=new Map((S.accounts||[]).map(a=>[String(a.id),a.name]));
   function detail(type){const groups=[...by[type]].sort((a,b)=>b[1].amount-a[1].amount);return groups.map(([name,g])=>{const subs=new Map(),methods=new Map(),accs=new Map();for(const m of g.moves){const amount=Number(m.amount)||0,sub=String(m.category||'Sin concepto')+' · '+String(m.subcategory||'Sin subconcepto');subs.set(sub,(subs.get(sub)||0)+amount);const method=payment(m.method);methods.set(method,(methods.get(method)||0)+amount);const acc=accounts.get(String(m.account))||'Cuenta sin identificar';accs.set(acc,(accs.get(acc)||0)+amount);}
     const t=map=>[...map].sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td class="right">'+money(v)+'</td></tr>').join('');
     return '<details class="cayon-family-detail"><summary><strong>'+esc(name)+'</strong><b>'+money(g.amount)+'</b></summary><div class="cayon-detail-columns"><div><h4>Conceptos originales</h4><table><tbody>'+t(subs)+'</tbody></table></div><div><h4>Forma de pago</h4><table><tbody>'+t(methods)+'</tbody></table></div><div><h4>Cuenta de tesorería</h4><table><tbody>'+t(accs)+'</tbody></table></div></div></details>';}).join('')||'<p class="muted">Sin movimientos.</p>';}
-  root.innerHTML='<h2>Resumen claro de ingresos y gastos</h2><p class="muted">Cada cobro o pago se cuenta una sola vez. Se agrupan las denominaciones antiguas de socios y fútbol base, sin cambiar ni borrar los asientos. Se aplican los filtros del análisis. Los traspasos no se consideran ingresos ni gastos.</p>'+summary+'<div class="cayon-colored-grid"><section><h3>Ingresos por familias</h3>'+graphic(by.income,'Ingresos')+'</section><section><h3>Gastos por familias</h3>'+graphic(by.expense,'Gastos')+'</section></div><h3>Consultar las cantidades originales</h3><p class="muted">Pulsa una familia para ver sus conceptos, formas de pago y cuentas, sin tablas interminables de ceros.</p><div class="cayon-colored-grid"><div>'+detail('income')+'</div><div>'+detail('expense')+'</div></div>';
+  root.innerHTML='<h2>Informes por familias · cantidades y porcentajes</h2><div class="filters"><label>Temporada<select id="cayonFamilySeason">'+optionHtml+'</select></label></div><p class="muted">Cada cobro o pago se cuenta una sola vez. Se agrupan las denominaciones antiguas de socios y fútbol base, sin cambiar ni borrar los asientos. Selecciona la temporada arriba para consultar el total. Los traspasos no se consideran ingresos ni gastos.</p>'+summary+'<div class="cayon-colored-grid"><section><h3>Ingresos por familias</h3>'+graphic(by.income,'Ingresos')+'</section><section><h3>Gastos por familias</h3>'+graphic(by.expense,'Gastos')+'</section></div><h3>Consultar las cantidades originales</h3><p class="muted">Pulsa una familia para ver sus conceptos, formas de pago y cuentas, sin tablas interminables de ceros.</p><div class="cayon-colored-grid"><div>'+detail('income')+'</div><div>'+detail('expense')+'</div></div>';
+  const selector=document.getElementById('cayonFamilySeason');if(selector){selector.value=selected;selector.addEventListener('change',paint);}
  }
- function init(){const dashboard=document.getElementById('analyticDashboard');if(!dashboard||document.getElementById('cayonResumenFamilias'))return;const panel=document.createElement('section');panel.className='panel';panel.id='cayonResumenFamilias';dashboard.insertAdjacentElement('beforebegin',panel);
-  // El desglose técnico anterior no se elimina, solo queda cerrado y accesible.
-  // Conservar las gráficas clásicas como respaldo hasta que los nuevos datos estén visibles.
-  const oldGraphs=document.getElementById('dashboardGraphs');
-  const originalTables=dashboard.querySelector('.grid2:not(#dashboardGraphs .grid2)');if(originalTables){const holder=document.createElement('details');holder.className='cayon-raw-details';holder.innerHTML='<summary>Ver movimientos por cuenta y concepto (detalle original)</summary>';originalTables.parentNode.insertBefore(holder,originalTables);holder.appendChild(originalTables);}
-  if(typeof renderAnalyticDashboard==='function'){const original=renderAnalyticDashboard;renderAnalyticDashboard=function(){const result=original.apply(this,arguments);paint();return result;};}
-  dashboard.querySelectorAll('input,select').forEach(el=>{el.addEventListener('input',paint);el.addEventListener('change',paint);});
-  // Supabase carga los asientos de forma asíncrona. Volver a dibujar al llegar o cambiar.
+ function init(){
+  const root=document.getElementById('cayonResumenFamilias');if(!root)return;
+  // Actualizar después de que Supabase cargue y cuando cambien los movimientos.
   let signature='';
-  function refreshWhenChanged(){
-   if(typeof S==='undefined')return;
-   const arr=S.moves||[];
-   const filters=[...dashboard.querySelectorAll('input,select')].map(e=>e.value).join('|');
-   const sig=[arr.length,arr.map(m=>String(m.id||'')+':'+String(m.amount||0)+':'+String(m.type||'')).join('|'),filters].join('~');
-   if(sig!==signature){signature=sig;try{paint();}catch(err){console.error('Informe por familias:',err);}}
+  function refresh(){if(typeof S==='undefined')return;const a=S.moves||[];
+   const sig=a.map(m=>[m.id,m.amount,m.type,m.category,m.subcategory,m.description,m.date,m.method].join(':')).join('|');
+   if(sig!==signature){signature=sig;try{paint();}catch(err){console.error('Informes por familias:',err);root.insertAdjacentHTML('beforeend','<p>No se ha podido calcular el informe.</p>');}}
   }
-  refreshWhenChanged();
-  setInterval(refreshWhenChanged,1500);
-  document.querySelectorAll('nav#nav button[data-tab="dashboard"]').forEach(b=>b.addEventListener('click',()=>setTimeout(refreshWhenChanged,50)));
+  refresh();setInterval(refresh,1500);
+  document.querySelectorAll('#nav button[data-tab="familias"]').forEach(btn=>btn.addEventListener('click',()=>setTimeout(refresh,80)));
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
