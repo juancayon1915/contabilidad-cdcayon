@@ -190,7 +190,7 @@ body nav#nav details.cayon-menu-group button.active {color:#FFFFFF!important;bac
 <section id="tab-dashboard">
 <div class="cards" id="topCards"></div>
 <div class="grid2"><div class="panel"><h2>Saldos por cuenta</h2><div id="balances"></div></div><div class="panel"><h2>Resultado por sección</h2><div id="sectionResults"></div></div></div>
-<div class="panel" id="analyticDashboard"><h2>Control de ingresos y gastos · cuentas y subcuentas</h2><p class="muted">Desglose de movimientos registrados. Los traspasos entre cuentas no son ingresos ni gastos.</p><div class="filters"><label>Temporada <select id="dashSeason"><option value="">Todas</option></select></label><label>Cuenta de tesorería <select id="dashAccount"><option value="">Todas</option></select></label><label>Sección <select id="dashSection"><option value="">Todas</option><option>3.ª RFEF</option><option>Categorías inferiores</option><option>Club general</option></select></label><label>Desde <input id="dashFrom" type="date"/></label><label>Hasta <input id="dashTo" type="date"/></label><label>Concepto <select id="dashCategory"><option value="">Todos</option></select></label><label>Subconcepto <select id="dashSubcategory"><option value="">Todos</option></select></label><label>Forma de pago <select id="dashMethod"><option value="">Todas</option></select></label><label>Buscar en movimientos <input id="dashSearch" placeholder="Descripción, tercero, referencia…"/></label><label>Agrupar gráficos por <select id="dashGroup"><option value="detail">Cuenta, concepto y subconcepto</option><option value="category">Concepto</option><option value="subcategory">Subconcepto</option><option value="account">Cuenta</option><option value="section">Sección</option><option value="method">Forma de pago</option></select></label></div><div class="panel" id="dashboardGraphs"><h2>Gráficas de ingresos y gastos</h2><p class="muted">Los gráficos suman los movimientos por el grupo elegido y muestran sus 12 mayores importes. Las tablas conservan el desglose completo. Todos responden a los filtros de este panel.</p><div class="grid2"><div><h3 id="incomeGraphTitle">Ingresos</h3><div aria-label="Gráfico de ingresos" class="graph-bars" id="incomeGraph"></div></div><div><h3 id="expenseGraphTitle">Gastos</h3><div aria-label="Gráfico de gastos" class="graph-bars" id="expenseGraph"></div></div></div></div><div class="cards" id="dashFilteredTotals"></div><div class="grid2"><div><h3>Ingresos por cuenta y concepto</h3><div class="tablewrap"><table><thead><tr><th>Cuenta</th><th>Sección</th><th>Concepto / subconcepto</th><th>Forma de pago</th><th class="right">Importe</th></tr></thead><tbody id="dashIncomeRows"></tbody></table></div></div><div><h3>Gastos por cuenta y concepto</h3><div class="tablewrap"><table><thead><tr><th>Cuenta</th><th>Sección</th><th>Concepto / subconcepto</th><th>Forma de pago</th><th class="right">Importe</th></tr></thead><tbody id="dashExpenseRows"></tbody></table></div></div></div><h3>Resumen por sección</h3><div class="tablewrap"><table><thead><tr><th>Sección</th><th class="right">Ingresos</th><th class="right">Gastos</th><th class="right">Resultado</th></tr></thead><tbody id="dashSectionRows"></tbody></table></div><div class="actions"><button id="dashExport" type="button">Exportar desglose CSV</button><button onclick="window.print()" type="button">Imprimir informe</button></div></div><div class="panel"><h2>Últimos movimientos</h2><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Sección</th><th>Cuenta</th><th>Importe</th></tr></thead><tbody id="recent"></tbody></table></div></div>
+<div class="panel" id="analyticDashboard"><h2>Control de ingresos y gastos · cuentas y subcuentas</h2><p class="muted">Desglose de movimientos registrados. Los traspasos entre cuentas no son ingresos ni gastos.</p><div class="filters"><label>Temporada <select id="dashSeason"><option value="">Todas</option></select></label><label>Cuenta de tesorería <select id="dashAccount"><option value="">Todas</option></select></label><label>Sección <select id="dashSection"><option value="">Todas</option><option>3.ª RFEF</option><option>Categorías inferiores</option><option>Club general</option></select></label><label>Desde <input id="dashFrom" type="date"/></label><label>Hasta <input id="dashTo" type="date"/></label><label>Concepto <select id="dashCategory"><option value="">Todos</option></select></label><label>Subconcepto <select id="dashSubcategory"><option value="">Todos</option></select></label><label>Forma de pago <select id="dashMethod"><option value="">Todas</option></select></label><label>Buscar en movimientos <input id="dashSearch" placeholder="Descripción, tercero, referencia…"/></label><label>Agrupar gráficos por <select id="dashGroup"><option value="category">Concepto</option><option value="detail">Cuenta, concepto y subconcepto</option><option value="subcategory">Subconcepto</option><option value="account">Cuenta</option><option value="section">Sección</option><option value="method">Forma de pago</option></select></label></div><div class="panel" id="dashboardGraphs"><h2>Ingresos y gastos por conceptos</h2><p class="muted">Cada barra indica el importe y el porcentaje del total filtrado. Puedes cambiar la agrupación arriba. No se incluyen traspasos.</p><div class="grid2"><div><h3 id="incomeGraphTitle">Ingresos</h3><div aria-label="Gráfico de ingresos" class="graph-bars" id="incomeGraph"></div></div><div><h3 id="expenseGraphTitle">Gastos</h3><div aria-label="Gráfico de gastos" class="graph-bars" id="expenseGraph"></div></div></div></div><div class="cards" id="dashFilteredTotals"></div><div class="grid2"><div><h3>Ingresos por cuenta y concepto</h3><div class="tablewrap"><table><thead><tr><th>Cuenta</th><th>Sección</th><th>Concepto / subconcepto</th><th>Forma de pago</th><th class="right">Importe</th></tr></thead><tbody id="dashIncomeRows"></tbody></table></div></div><div><h3>Gastos por cuenta y concepto</h3><div class="tablewrap"><table><thead><tr><th>Cuenta</th><th>Sección</th><th>Concepto / subconcepto</th><th>Forma de pago</th><th class="right">Importe</th></tr></thead><tbody id="dashExpenseRows"></tbody></table></div></div></div><h3>Resumen por sección</h3><div class="tablewrap"><table><thead><tr><th>Sección</th><th class="right">Ingresos</th><th class="right">Gastos</th><th class="right">Resultado</th></tr></thead><tbody id="dashSectionRows"></tbody></table></div><div class="actions"><button id="dashExport" type="button">Exportar desglose CSV</button><button onclick="window.print()" type="button">Imprimir informe</button></div></div><div class="panel"><h2>Últimos movimientos</h2><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Sección</th><th>Cuenta</th><th>Importe</th></tr></thead><tbody id="recent"></tbody></table></div></div>
 </section>
 <section class="hidden" id="tab-accounting"><div class="panel"><h2>Libro de movimientos</h2><div class="filters"><label>Buscar<input id="fSearch" placeholder="Concepto, persona, referencia…"/></label><label>Tipo<select id="fType"><option value="">Todos</option><option value="income">Ingresos</option><option value="expense">Gastos</option><option value="transfer">Traspasos</option></select></label><label>Sección<select id="fSection"><option value="">Todas</option><option>3.ª RFEF</option><option>Categorías inferiores</option><option>Club general</option></select></label><label>Subconcepto<input id="fSubcategory" placeholder="Todos"/></label><label>Cuenta<select id="fAccount"><option value="">Todas</option></select></label><label>Desde<input id="fFrom" type="date"/></label><label>Hasta<input id="fTo" type="date"/></label></div><div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Descripción / tercero</th><th>Tipo / concepto</th><th>Sección</th><th>Cuenta</th><th>Importe</th><th></th></tr></thead><tbody id="moveRows"></tbody></table></div><p class="muted small" id="moveCount"></p></div>
 <div class="panel"><h2>Registrar ingresos, gastos o traspasos</h2><form id="moveForm"><div class="fields">
@@ -866,7 +866,39 @@ start().catch(e=>document.getElementById('cayonLoginMessage').textContent=e.mess
 const $=id=>document.getElementById(id);
 const euro=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n);
 function parseMoney(t){let x=(t||'').replace(/[^\d.,-]/g,'').trim();if(!x)return NaN;if(x.includes(',')&&x.includes('.'))x=x.replace(/\./g,'').replace(',','.');else if(x.includes(','))x=x.replace(',','.');return Number(x)}
-function graph(source,target,expense){const host=$(target);if(!host)return;const type=expense?'expense':'income',mode=$('dashGroup')?.value||'detail',groupLabel=$('dashGroup')?.selectedOptions[0]?.textContent||'Cuenta, concepto y subconcepto',title=$(expense?'expenseGraphTitle':'incomeGraphTitle');if(title)title.textContent=(expense?'Gastos':'Ingresos')+' · '+groupLabel;const moves=typeof dashFilteredMoves==='function'?dashFilteredMoves().filter(m=>m.type===type):[];const sums=new Map();for(const m of moves){let name;if(mode==='category')name=m.category||'Sin concepto';else if(mode==='subcategory')name=m.subcategory||'Sin subconcepto';else if(mode==='account')name=accName(m.account);else if(mode==='section')name=m.section||'Sin sección';else if(mode==='method')name=m.method||'Sin indicar';else name=[accName(m.account),m.category||'Sin concepto',m.subcategory||'Sin subconcepto'].join(' · ');sums.set(name,(sums.get(name)||0)+(Number(m.amount)||0));}const vals=[...sums].map(([name,amount])=>({name,amount})).sort((a,b)=>b.amount-a.amount);const max=Math.max(1,...vals.map(x=>x.amount));host.replaceChildren();if(!vals.length){host.textContent='Sin movimientos para los filtros seleccionados.';return}for(const v of vals.slice(0,12)){const item=document.createElement('div');item.className='graph-item';const label=document.createElement('span');label.className='graph-label';label.textContent=v.name;label.title=v.name;const track=document.createElement('div');track.className='graph-track';const fill=document.createElement('div');fill.className='graph-fill'+(expense?' expense':'');fill.style.width=(100*v.amount/max).toFixed(2)+'%';track.append(fill);const amt=document.createElement('span');amt.className='graph-amount';amt.textContent=euro(v.amount);item.append(label,track,amt);host.append(item)}}
+function graph(source,target,expense){
+ const host=$(target);if(!host)return;
+ const type=expense?'expense':'income',mode=$('dashGroup')?.value||'category';
+ const groupLabel=$('dashGroup')?.selectedOptions[0]?.textContent||'Concepto';
+ const title=$(expense?'expenseGraphTitle':'incomeGraphTitle');
+ if(title)title.textContent=(expense?'Gastos':'Ingresos')+' por '+groupLabel.toLowerCase();
+ const moves=typeof dashFilteredMoves==='function'?dashFilteredMoves().filter(m=>m.type===type):[];
+ const sums=new Map();
+ for(const m of moves){let name;
+  if(mode==='category')name=m.category||'Sin concepto';
+  else if(mode==='subcategory')name=m.subcategory||'Sin subconcepto';
+  else if(mode==='account')name=accName(m.account);
+  else if(mode==='section')name=m.section||'Sin sección';
+  else if(mode==='method')name=m.method||'Sin indicar';
+  else name=[m.category||'Sin concepto',m.subcategory||'Sin subconcepto',accName(m.account)].join(' · ');
+  sums.set(name,(sums.get(name)||0)+(Number(m.amount)||0));
+ }
+ const vals=[...sums].map(([name,amount])=>({name,amount})).sort((a,b)=>b.amount-a.amount);
+ const total=vals.reduce((n,v)=>n+v.amount,0),max=Math.max(1,...vals.map(v=>v.amount));
+ host.replaceChildren();
+ if(!vals.length){host.textContent='No hay movimientos con estos filtros.';return;}
+ const summary=document.createElement('div');summary.className='cayon-chart-total';
+ summary.textContent='TOTAL: '+euro(total)+' · '+moves.length+' movimientos';host.append(summary);
+ for(const v of vals){
+  const item=document.createElement('div');item.className='cayon-chart-row';
+  const label=document.createElement('span');label.className='cayon-chart-label';label.textContent=v.name;
+  const value=document.createElement('strong');value.className='cayon-chart-value';value.textContent=euro(v.amount)+' · '+(total?Math.round(v.amount/total*1000)/10:0).toLocaleString('es-ES')+' %';
+  const track=document.createElement('div');track.className='cayon-chart-track';
+  const fill=document.createElement('div');fill.className='cayon-chart-fill'+(expense?' expense':'');
+  fill.style.width=Math.max(0,Math.min(100,v.amount/max*100))+'%';track.append(fill);
+  item.append(label,value,track);host.append(item);
+ }
+}
 let queued=false;function refresh(){if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;graph('dashIncomeRows','incomeGraph',false);graph('dashExpenseRows','expenseGraph',true)})}
 function prefs(){let p={};try{p=JSON.parse(localStorage.getItem('cdcayon_display_v30')||'{}')}catch{};document.body.classList.remove('font-large','font-larger','density-compact');if(p.font==='large')document.body.classList.add('font-large');if(p.font==='larger')document.body.classList.add('font-larger');if(p.density==='compact')document.body.classList.add('density-compact');$('prefFont').value=p.font||'normal';$('prefDensity').value=p.density||'comfortable'}
 function init(){prefs();$('saveDisplayPrefs').addEventListener('click',()=>{try{localStorage.setItem('cdcayon_display_v30',JSON.stringify({font:$('prefFont').value,density:$('prefDensity').value}));$('prefNotice').textContent='Preferencias guardadas en este navegador.'}catch{$('prefNotice').textContent='No se pudieron guardar las preferencias.'}prefs()});$('resetDisplayPrefs').addEventListener('click',()=>{localStorage.removeItem('cdcayon_display_v30');prefs();$('prefNotice').textContent='Presentación restablecida.'});document.querySelectorAll('[data-go-tab]').forEach(b=>b.addEventListener('click',()=>{const target=document.querySelector('#nav [data-tab="'+b.dataset.goTab+'"]');if(target)target.click()}));for(const id of ['dashIncomeRows','dashExpenseRows']){const el=$(id);if(el)new MutationObserver(refresh).observe(el,{childList:true,subtree:true,characterData:true})}for(const id of ['dashSeason','dashAccount','dashSection'])$(id)?.addEventListener('change',()=>setTimeout(refresh,0));refresh();
@@ -883,11 +915,11 @@ window.budgetData=function(){return Array.isArray(S.budgets)?S.budgets:[]};
 function categories(){const t=el('budgetType').value;const prev=el('budgetCategory').value;el('budgetCategory').innerHTML=(cats[t]||[]).map(c=>'<option value="'+clean(c)+'">'+clean(c)+'</option>').join('');if((cats[t]||[]).includes(prev))el('budgetCategory').value=prev;}
 function actual(type,category,season){const year=Number(String(season).slice(0,4));if(!Number.isInteger(year)||year<1900)return 0;const start=year+'-07-01',end=(year+1)+'-06-30';return S.moves.filter(m=>m.type===type&&m.category===category&&m.date>=start&&m.date<=end).reduce((n,m)=>n+Number(m.amount||0),0)}
 function show(){const season=el('budgetSeason').value.trim(),rows=budgetData().filter(x=>x.season===season);const totals={income:0,expense:0};
- const rowHtml=x=>{const real=actual(x.type,x.category,x.season);return '<tr><td>'+clean(x.season)+'</td><td>Club general</td><td>'+(x.type==='income'?'Ingresos':'Gastos')+'</td><td>'+clean(x.category)+'</td><td class="right">'+money(x.amount)+'</td><td class="right">'+money(real)+'</td><td class="right">'+money(real-x.amount)+'</td><td><button type="button" data-budget-edit="'+clean(x.id)+'">Editar</button> <button type="button" class="danger" data-budget-del="'+clean(x.id)+'">Eliminar</button></td></tr>'};
+ const rowHtml=x=>{const real=actual(x.type,x.category,x.season);return '<tr><td>'+clean(x.season)+'</td><td>Club general</td><td>'+(x.type==='income'?'Ingresos':'Gastos')+'</td><td>'+clean(x.category)+'</td><td class="right">'+'<input aria-label="Editar presupuesto de '+clean(x.category)+'" title="Modificar importe y salir del campo para guardar" class="cayon-budget-inline" type="number" min="0" step="0.01" data-budget-amount="'+clean(x.id)+'" value="'+Number(x.amount||0)+'" style="width:120px;text-align:right"></td><td class="right">'+money(real)+'</td><td class="right">'+money(real-x.amount)+'</td><td><button type="button" data-budget-edit="'+clean(x.id)+'">Editar</button> <button type="button" class="danger" data-budget-del="'+clean(x.id)+'">Eliminar</button></td></tr>'};
  const blocks=['income','expense'].map(type=>{const group=rows.filter(x=>x.type===type);const planned=group.reduce((n,x)=>n+Number(x.amount||0),0),real=group.reduce((n,x)=>n+actual(x.type,x.category,x.season),0);totals[type]=planned;const title=type==='income'?'Ingresos':'Gastos';return '<tr class="budget-group"><th colspan="8">'+title+'</th></tr>'+ (group.map(rowHtml).join('')||'<tr><td colspan="8" class="empty">Sin partidas de '+title.toLowerCase()+'.</td></tr>')+'<tr class="budget-subtotal"><td colspan="4"><strong>Total '+title.toLowerCase()+'</strong></td><td class="right"><strong>'+money(planned)+'</strong></td><td class="right"><strong>'+money(real)+'</strong></td><td class="right"><strong>'+money(real-planned)+'</strong></td><td></td></tr>'}).join('');
  el('budgetRows').innerHTML=blocks;const gross=totals.income+totals.expense;el('budgetTotals').innerHTML=[['Ingresos previstos',totals.income],['Gastos previstos',totals.expense],['Montante total',gross],['Resultado previsto',totals.income-totals.expense]].map(([name,value])=>'<div class="card"><div class="label">'+name+'</div><div class="value">'+money(value)+'</div></div>').join('');}
 function saveBudget(){const season=el('budgetSeason').value.trim(),type=el('budgetType').value,category=el('budgetCategory').value,amount=Number(el('budgetAmount').value);if(!/^\d{4}\/\d{4}$/.test(season)||Number(season.slice(5))!==Number(season.slice(0,4))+1){alert('Indica una temporada válida, por ejemplo 2026/2027.');return}if(!category||!Number.isFinite(amount)||amount<0){alert('Selecciona un concepto y un importe válido.');return}if(!Array.isArray(S.budgets))S.budgets=[];let x=S.budgets.find(x=>x.season===season&&x.type===type&&x.category===category);if(x)x.amount=amount;else S.budgets.push({id:safeUUID(),season,type,category,section:'Club general',amount});save();show();}
-function init(){categories();el('budgetType').addEventListener('change',()=>{categories();show()});el('budgetSeason').addEventListener('input',show);el('budgetSave').addEventListener('click',saveBudget);el('budgetRows').addEventListener('click',e=>{const edit=e.target.closest('[data-budget-edit]'),del=e.target.closest('[data-budget-del]');if(!edit&&!del)return;const id=(edit||del).dataset[edit?'budgetEdit':'budgetDel'],x=budgetData().find(x=>x.id===id);if(!x)return;if(edit){el('budgetSeason').value=x.season;el('budgetType').value=x.type;categories();el('budgetCategory').value=x.category;el('budgetAmount').value=x.amount;el('budgetAmount').focus();}else if(confirm('¿Eliminar esta partida presupuestaria? No se borrarán movimientos ni socios.')){S.budgets=S.budgets.filter(y=>y.id!==id);save();show()}});
+function init(){categories();el('budgetType').addEventListener('change',()=>{categories();show()});el('budgetSeason').addEventListener('input',show);el('budgetSave').addEventListener('click',saveBudget);el('budgetRows').addEventListener('change',e=>{const input=e.target.closest('[data-budget-amount]');if(!input)return;const partida=budgetData().find(x=>String(x.id)===input.dataset.budgetAmount);if(!partida)return;const importe=Number(input.value);if(!input.value.trim()||!Number.isFinite(importe)||importe<0){alert('Introduce un importe válido.');show();return;}partida.amount=importe;save();show();});el('budgetRows').addEventListener('click',e=>{const edit=e.target.closest('[data-budget-edit]'),del=e.target.closest('[data-budget-del]');if(!edit&&!del)return;const id=(edit||del).dataset[edit?'budgetEdit':'budgetDel'],x=budgetData().find(x=>x.id===id);if(!x)return;if(edit){el('budgetSeason').value=x.season;el('budgetType').value=x.type;categories();el('budgetCategory').value=x.category;el('budgetAmount').value=x.amount;el('budgetAmount').focus();}else if(confirm('¿Eliminar esta partida presupuestaria? No se borrarán movimientos ni socios.')){S.budgets=S.budgets.filter(y=>y.id!==id);save();show()}});
  el('budgetExport').addEventListener('click',()=>{const season=el('budgetSeason').value.trim();const rows=[['Temporada','Sección','Tipo','Concepto','Previsto','Real','Diferencia'],...budgetData().filter(x=>x.season===season).map(x=>[x.season,'Club general',x.type==='income'?'Ingresos':'Gastos',x.category,x.amount,actual(x.type,x.category,x.season),actual(x.type,x.category,x.season)-x.amount])];const csv=rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='presupuesto_'+season.replace('/','-')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
  const original=render;render=function(){original();show()};show();}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
@@ -1709,7 +1741,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  function init(){
   const dashboard=document.getElementById('analyticDashboard');if(!dashboard||document.getElementById('cayonResumenFamilias'))return;
   const panel=document.createElement('div');panel.className='panel';panel.id='cayonResumenFamilias';
-  panel.innerHTML='<h2>Ingresos y gastos por familia · resumen por cuentas</h2><p class="muted">Los importes se agrupan por concepto y subconcepto. Cada cuenta aparece por separado y el total reúne todas las cuentas seleccionadas. No se suman los traspasos. Utiliza los filtros del panel de análisis.</p><h3>Ingresos</h3><div id="cayonFamiliasIngresos"></div><h3>Gastos</h3><div id="cayonFamiliasGastos"></div>';
+  panel.innerHTML='<h2>Ingresos y gastos registrados · por concepto y cuenta</h2><p class="muted">Solo aparecen ingresos y gastos que constan como movimientos contables y que cumplen los filtros de análisis. No es el total de socios pagados en sus fichas: los cobros importados sin asiento no figuran aquí. Los traspasos se excluyen. Usa el desglose específico de socios que aparece a continuación.</p><h3>Ingresos</h3><div id="cayonFamiliasIngresos"></div><h3>Gastos</h3><div id="cayonFamiliasGastos"></div>';
   dashboard.insertAdjacentElement('beforebegin',panel);
   if(typeof renderAnalyticDashboard==='function'){
    const original=renderAnalyticDashboard;
@@ -1785,6 +1817,106 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
        alert('No se pudo guardar el nombre: '+(error.message||error));
      }
    });
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+
+<style id="cayon-graficas-socios-claras">
+#cayonSociosCobros .cayon-socio-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin:12px 0}
+#cayonSociosCobros .cayon-socio-metric{border:1px solid #dce8e6;border-radius:9px;padding:12px;background:#f7faf9}
+#cayonSociosCobros .cayon-socio-metric strong{display:block;font-size:21px;color:#183d4a}
+#cayonSociosCobros .cayon-socio-line{display:grid;grid-template-columns:minmax(95px,160px) minmax(90px,1fr) 120px;gap:10px;align-items:center;margin:10px 0}
+#cayonSociosCobros .cayon-socio-track{height:24px;background:#e9eeee;border-radius:6px;overflow:hidden}
+#cayonSociosCobros .cayon-socio-fill{height:100%;background:#159b80;border-radius:6px}
+#cayonSociosCobros .cayon-socio-line:nth-child(2n) .cayon-socio-fill{background:#3b86b7}
+#cayonSociosCobros .cayon-socio-line:nth-child(3n) .cayon-socio-fill{background:#dda359}
+#cayonSociosCobros .cayon-socio-line b{text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:550px){#cayonSociosCobros .cayon-socio-line{grid-template-columns:100px minmax(40px,1fr) 95px;font-size:12px;gap:5px}}
+@media print{#cayonSociosCobros .cayon-socio-fill{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+<script id="cayon-graficas-socios-forma-pago-2026">
+(function(){
+ 'use strict';
+ const eur=n=>Number(n||0).toLocaleString('es-ES',{style:'currency',currency:'EUR'});
+ const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ function methodName(v){const x=String(v||'').trim(),t=x.toLowerCase();if(!x)return 'Sin identificar';if(/efectivo|contado|cash/.test(t))return 'Efectivo';if(/tarjeta|tpv|dat[aá]fono/.test(t))return 'Tarjeta';if(/bizum/.test(t))return 'Bizum';if(/transfer|cheque|banco|recibo|domicilia/.test(t))return /cheque/.test(t)?'Cheque':/recibo|domicilia/.test(t)?'Recibo domiciliado':'Transferencia';return x;}
+ function paint(){
+  const host=document.getElementById('cayonSociosCobros');
+  if(!host||typeof S==='undefined')return;
+  const season=document.getElementById('dashSeason')?.value||'';
+  const people=(S.people||[]).filter(p=>p.kind==='Socio'&&(!season||p.season===season));
+  const ids=new Set(people.map(p=>String(p.id)));
+  const totals=new Map();let recorded=0,legacy=0,payments=0;
+  function add(m,n){n=Number(n)||0;if(n<=0)return;totals.set(m,(totals.get(m)||0)+n);}
+  const filtered=typeof dashFilteredMoves==='function'?dashFilteredMoves():S.moves||[];
+  for(const m of filtered){if(m.type!=='income')continue;
+   let amount=0;
+   if(m.linkedId&&String(m.linkedId).startsWith('person:')&&ids.has(String(m.linkedId).slice(7)))amount+=Number(m.amount||0);
+   for(const a of m.allocations||[])if(a.linkedId&&String(a.linkedId).startsWith('person:')&&ids.has(String(a.linkedId).slice(7)))amount+=Number(a.amount||0);
+   if(amount>0){add(methodName(m.method),amount);recorded+=amount;payments++;}
+  }
+  // A ficha importada puede contener una cuota cobrada sin asiento. Mostrarla explícitamente,
+  // pero nunca sumar esa cuota si ya está vinculada a un movimiento contable.
+  for(const p of people){const amount=Number(p.importedPaid||0);if(amount>0){legacy+=amount;}}
+  const values=[...totals].sort((a,b)=>b[1]-a[1]);const max=Math.max(1,...values.map(x=>x[1]));
+  const lines=values.map(([name,amount])=>'<div class="cayon-socio-line"><span>'+escapeHtml(name)+'</span><div class="cayon-socio-track"><div class="cayon-socio-fill" style="width:'+(100*amount/max).toFixed(1)+'%"></div></div><b>'+eur(amount)+'</b></div>').join('')||'<p class="muted">No hay cobros de socios vinculados a movimientos con estos filtros.</p>';
+  host.innerHTML='<h2>Cobros de socios por forma de pago</h2><p class="muted">Se desglosan solo los cobros vinculados a fichas de socios; no se incluyen cuotas de jugadores ni traspasos. Se respetan los filtros de análisis del panel inferior.</p><div class="cayon-socio-metrics"><div class="cayon-socio-metric">Cobros contables vinculados<strong>'+eur(recorded)+'</strong></div><div class="cayon-socio-metric">Socios de la temporada<strong>'+people.length+'</strong></div><div class="cayon-socio-metric">Importes importados en fichas<strong>'+eur(legacy)+'</strong><small class="muted">Se muestran aparte; no se añaden al total contable.</small></div></div>'+lines+'<p class="small muted">Si una cuota antigua no tiene movimiento vinculado, no es posible conocer con seguridad su forma de pago. Los importes importados se muestran por separado para evitar atribuciones erróneas.</p>';
+ }
+ function init(){const anchor=document.getElementById('cayonResumenFamilias')||document.getElementById('analyticDashboard');if(!anchor||document.getElementById('cayonSociosCobros'))return;
+  const panel=document.createElement('section');panel.className='panel';panel.id='cayonSociosCobros';anchor.insertAdjacentElement('afterend',panel);
+  // React to analysis filters after the standard dashboard has recomputed its values.
+  document.querySelectorAll('#analyticDashboard input,#analyticDashboard select').forEach(x=>{x.addEventListener('change',()=>queueMicrotask(paint));x.addEventListener('input',()=>queueMicrotask(paint));});
+  const original=window.render;
+  if(typeof original==='function')window.render=function(){const result=original.apply(this,arguments);paint();return result;};
+  paint();
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+<style id="cayon-graficos-faciles-2026">
+#dashboardGraphs .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
+#dashboardGraphs .cayon-chart-total{font-weight:750;font-size:16px;color:#183d4a;background:#eaf5f1;padding:12px;margin:6px 0 14px;border-radius:8px}
+#dashboardGraphs .cayon-chart-row{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;row-gap:5px;padding:11px 0;border-bottom:1px solid #e6eeeb}
+#dashboardGraphs .cayon-chart-label{font-size:13px;overflow-wrap:anywhere}
+#dashboardGraphs .cayon-chart-value{font-size:13px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+#dashboardGraphs .cayon-chart-track{grid-column:1/-1;background:#e9efed;height:13px;border-radius:9px;overflow:hidden}
+#dashboardGraphs .cayon-chart-fill{height:100%;background:#16a085;border-radius:9px}
+#dashboardGraphs .cayon-chart-fill.expense{background:#ed8270}
+#cayonDiccionarioContable table{min-width:610px}#cayonDiccionarioContable td{font-size:13px}
+@media(max-width:850px){#dashboardGraphs .grid2{grid-template-columns:1fr}}
+</style><script id="cayon-diccionario-contable-2026">
+(function(){'use strict';
+ const esc2=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ function render(){
+  const host=document.getElementById('cayonDiccionarioContable');
+  if(!host||typeof S==='undefined')return;
+  const moves=Array.isArray(S.moves)?S.moves:[];
+  const valid=moves.filter(m=>m.type==='income'||m.type==='expense');
+  const by=new Map();
+  for(const m of valid){const type=m.type,cat=String(m.category||'Sin concepto'),sub=String(m.subcategory||'Sin subconcepto');const key=type+'||'+cat;
+   if(!by.has(key))by.set(key,{type,cat,subs:new Set(),accounts:new Set()});
+   const g=by.get(key);g.subs.add(sub);g.accounts.add(String(m.account||''));
+  }
+  const known=[];
+  if(typeof cats!=='undefined')for(const t of ['income','expense'])for(const c of (cats[t]||[]))known.push({type:t,cat:c});
+  for(const item of known){let key=item.type+'||'+item.cat;if(!by.has(key))by.set(key,{...item,subs:new Set(),accounts:new Set()});}
+  const names=new Map((S.accounts||[]).map(a=>[String(a.id),a.name]));
+  const sorted=[...by.values()].sort((a,b)=>a.type.localeCompare(b.type)||a.cat.localeCompare(b.cat,'es'));
+  let html='<div class="tablewrap"><table><thead><tr><th>Tipo</th><th>Concepto / familia</th><th>Subconceptos utilizados</th><th>Cuentas de tesorería utilizadas</th></tr></thead><tbody>';
+  for(const g of sorted){const subs=[...g.subs].sort((a,b)=>a.localeCompare(b,'es'));const accounts=[...g.accounts].map(x=>names.get(x)||'Cuenta sin identificar').sort((a,b)=>a.localeCompare(b,'es'));
+   html+='<tr><td>'+(g.type==='income'?'Ingreso':'Gasto')+'</td><td><strong>'+esc2(g.cat)+'</strong></td><td>'+esc2(subs.join(' · ')||'Sin movimientos')+'</td><td>'+esc2(accounts.join(' · ')||'—')+'</td></tr>';
+  }
+  html+='</tbody></table></div>';
+  host.querySelector('.cayon-diccionario-tabla').innerHTML=html;
+ }
+ function init(){let panel=document.getElementById('analyticDashboard');if(!panel||document.getElementById('cayonDiccionarioContable'))return;
+  const box=document.createElement('div');box.className='panel';box.id='cayonDiccionarioContable';
+  box.innerHTML='<h2>Guía de conceptos, subconceptos y cuentas</h2><p><strong>Concepto:</strong> el motivo del ingreso o del gasto, por ejemplo Abonados y socios. <strong>Subconcepto:</strong> su detalle, por ejemplo cuotas de socios. <strong>Cuenta:</strong> dónde se cobró o pagó, por ejemplo Caja o Banco. La cuenta nunca es otro ingreso o gasto.</p><p class="muted">Aquí aparecen los conceptos existentes y los subconceptos y cuentas que se han utilizado. Es una consulta: no renombra ni mueve asientos ni modifica los presupuestos.</p><details><summary style="cursor:pointer;font-weight:700;padding:10px 0">Ver correspondencia de conceptos y cuentas</summary><div class="cayon-diccionario-tabla"></div></details>';
+  panel.insertAdjacentElement('afterend',box);
+  const obsTarget=document.getElementById('dashIncomeRows');
+  if(obsTarget)new MutationObserver(()=>render()).observe(obsTarget,{childList:true});
+  render();
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
